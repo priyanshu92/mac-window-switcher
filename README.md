@@ -2,6 +2,8 @@
 
 A native macOS menu bar app that replaces Command-Tab's app icon strip with a visual switcher for individual windows.
 
+![Window Switcher app icon](Resources/AppIcon.png)
+
 ## What it does
 
 - Hold `Command` and tap `Tab` to open a filmstrip of window previews.

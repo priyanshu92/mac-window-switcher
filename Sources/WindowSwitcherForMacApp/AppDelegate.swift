@@ -14,6 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var preferencesController: PreferencesWindowController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        applyDevelopmentIcon()
+
         switcherController = SwitcherController(
             windowService: windowService,
             settingsStore: settingsStore
@@ -78,6 +80,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshPermissionUI() {
         preferencesController.refresh()
         statusItemController.refresh()
+    }
+
+    private func applyDevelopmentIcon() {
+        let iconURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Resources/AppIcon.png")
+        if let icon = NSImage(contentsOf: iconURL) {
+            NSApp.applicationIconImage = icon
+        }
     }
 }
 

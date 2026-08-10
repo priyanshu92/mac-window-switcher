@@ -81,3 +81,24 @@ public enum WindowPresentationFilter {
         !screenCaptureGranted || hasPreview
     }
 }
+
+public enum WindowActivationStep: Equatable, Sendable {
+    case unminimize
+    case frontProcessWithWindowIdentifier
+    case makeWindowKey
+    case activateApplication
+    case resolveCrossSpaceAccessibility
+    case raiseWindow
+    case publicActivationFallback
+}
+
+public enum WindowActivationPlan {
+    public static let fullScreenSafe: [WindowActivationStep] = [
+        .unminimize,
+        .frontProcessWithWindowIdentifier,
+        .makeWindowKey,
+        .activateApplication,
+        .resolveCrossSpaceAccessibility,
+        .raiseWindow,
+    ]
+}

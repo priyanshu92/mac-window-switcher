@@ -16,7 +16,7 @@ public final class SwitchableWindow: Identifiable {
     public let isMinimized: Bool
     public let bounds: CGRect
 
-    fileprivate let accessibilityElement: AXUIElement?
+    var accessibilityElement: AXUIElement?
 
     fileprivate init(
         id: String,
@@ -207,15 +207,47 @@ public final class MacWindowService {
         }
 
         application.unhide()
-        application.activate(options: [.activateIgnoringOtherApps])
+        unminimize(window)
 
+        if
+            let windowIdentifier = window.windowIdentifier,
+            WindowServerFocus.focus(
+                processIdentifier: window.processIdentifier,
+                windowIdentifier: windowIdentifier
+            )
+        {
+            application.activate(options: [.activateIgnoringOtherApps])
+
+            if
+                window.accessibilityElement == nil,
+                let windowIdentifier = window.windowIdentifier
+            {
+                window.accessibilityElement = AccessibilityWindowResolver.resolve(
+                    processIdentifier: window.processIdentifier,
+                    windowIdentifier: windowIdentifier
+                )
+            }
+            raise(window)
+            return
+        }
+
+        focusAndRaise(window)
+        application.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+    }
+
+    public func quitApplication(owning window: SwitchableWindow) {
+        NSRunningApplication(processIdentifier: window.processIdentifier)?.terminate()
+    }
+
+    private func focusAndRaise(_ window: SwitchableWindow) {
         guard let element = window.accessibilityElement else { return }
+
+        unminimize(window)
         AXUIElementSetAttributeValue(
             element,
-            kAXMinimizedAttribute as CFString,
-            kCFBooleanFalse
+            kAXMainAttribute as CFString,
+            kCFBooleanTrue
         )
-        AXUIElementPerformAction(element, kAXRaiseAction as CFString)
 
         let applicationElement = AXUIElementCreateApplication(window.processIdentifier)
         AXUIElementSetAttributeValue(
@@ -223,10 +255,21 @@ public final class MacWindowService {
             kAXFocusedWindowAttribute as CFString,
             element
         )
+        AXUIElementPerformAction(element, kAXRaiseAction as CFString)
     }
 
-    public func quitApplication(owning window: SwitchableWindow) {
-        NSRunningApplication(processIdentifier: window.processIdentifier)?.terminate()
+    private func unminimize(_ window: SwitchableWindow) {
+        guard let element = window.accessibilityElement else { return }
+        AXUIElementSetAttributeValue(
+            element,
+            kAXMinimizedAttribute as CFString,
+            kCFBooleanFalse
+        )
+    }
+
+    private func raise(_ window: SwitchableWindow) {
+        guard let element = window.accessibilityElement else { return }
+        AXUIElementPerformAction(element, kAXRaiseAction as CFString)
     }
 
     private func isEligible(_ application: NSRunningApplication) -> Bool {
@@ -356,4 +399,5 @@ public final class MacWindowService {
             accessibilityDescription: "Application"
         ) ?? NSImage(size: NSSize(width: 32, height: 32))
     }
+
 }

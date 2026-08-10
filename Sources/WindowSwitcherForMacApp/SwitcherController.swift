@@ -30,7 +30,7 @@ final class SwitcherController {
         panel.level = .popUpMenu
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = false
+        panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.hidesOnDeactivate = false
 
@@ -40,6 +40,9 @@ final class SwitcherController {
         hostingController = NSHostingController(rootView: view)
         hostingController.view.wantsLayer = true
         hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
+        hostingController.view.layer?.cornerRadius = 34
+        hostingController.view.layer?.cornerCurve = .continuous
+        hostingController.view.layer?.masksToBounds = true
         panel.contentViewController = hostingController
     }
 

@@ -6,6 +6,7 @@ BUNDLE_ID="com.priyanshu.window-switcher"
 APP_DIR="/Applications/${APP_NAME}.app"
 CONTENTS_DIR="${APP_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
+RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 
 echo "Building Window Switcher..."
 swift build -c release --quiet
@@ -22,7 +23,9 @@ if [ -d "$APP_DIR" ]; then
 fi
 
 mkdir -p "$MACOS_DIR"
+mkdir -p "$RESOURCES_DIR"
 cp "$EXECUTABLE" "$MACOS_DIR/WindowSwitcherForMacApp"
+cp "Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
 
 cat > "$CONTENTS_DIR/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -49,6 +52,8 @@ cat > "$CONTENTS_DIR/Info.plist" << PLIST
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
 </dict>
 </plist>
 PLIST

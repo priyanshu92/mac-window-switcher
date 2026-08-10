@@ -50,7 +50,6 @@ struct SwitcherView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(backdrop)
-        .environment(\.colorScheme, .dark)
     }
 
     private var emptyState: some View {
@@ -60,18 +59,30 @@ struct SwitcherView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    @ViewBuilder
     private var backdrop: some View {
-        RoundedRectangle(cornerRadius: 34, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .overlay {
-                RoundedRectangle(cornerRadius: 34, style: .continuous)
-                    .fill(.black.opacity(0.2))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 34, style: .continuous)
-                    .stroke(.white.opacity(0.18), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.34), radius: 30, y: 14)
+        if #available(macOS 26.0, *) {
+            Color.clear
+                .glassEffect(
+                    .regular.tint(.white.opacity(0.18)),
+                    in: .rect(cornerRadius: 34)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 34, style: .continuous)
+                        .stroke(.white.opacity(0.52), lineWidth: 1)
+                }
+        } else {
+            RoundedRectangle(cornerRadius: 34, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 34, style: .continuous)
+                        .fill(.white.opacity(0.14))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 34, style: .continuous)
+                        .stroke(.white.opacity(0.42), lineWidth: 1)
+                }
+        }
     }
 }
 

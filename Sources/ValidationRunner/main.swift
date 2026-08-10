@@ -9,6 +9,7 @@ enum ValidationRunner {
         validateWindowRecordMatching()
         validateInitialWindowSelection()
         validateWindowPresentationFiltering()
+        validateFullScreenActivationPlan()
         print("All validations passed.")
     }
 
@@ -102,6 +103,20 @@ enum ValidationRunner {
                 screenCaptureGranted: false
             ),
             "Permission setup should retain icon fallbacks until capture is granted"
+        )
+    }
+
+    private static func validateFullScreenActivationPlan() {
+        expect(
+            WindowActivationPlan.fullScreenSafe == [
+                .unminimize,
+                .frontProcessWithWindowIdentifier,
+                .makeWindowKey,
+                .activateApplication,
+                .resolveCrossSpaceAccessibility,
+                .raiseWindow,
+            ],
+            "Full-screen activation must target the selected Window Server ID"
         )
     }
 
