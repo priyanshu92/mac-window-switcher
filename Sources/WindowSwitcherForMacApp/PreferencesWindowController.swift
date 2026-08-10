@@ -2,6 +2,21 @@ import AppCore
 import AppKit
 import PlatformServices
 
+private final class AppearanceAwareSection: NSStackView {
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+}
+
 @MainActor
 protocol PreferencesWindowControllerDelegate: AnyObject {
     func preferencesDidChange(_ settings: SwitcherSettings)
@@ -148,14 +163,14 @@ final class PreferencesWindowController: NSWindowController {
             stack.spacing = 10
         }
 
-        let section = NSStackView(views: [label, content])
+        let section = AppearanceAwareSection(views: [label, content])
         section.orientation = .vertical
         section.alignment = .leading
         section.spacing = 10
         section.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
         section.wantsLayer = true
         section.layer?.cornerRadius = 12
-        section.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        section.layer?.cornerCurve = .continuous
         return section
     }
 

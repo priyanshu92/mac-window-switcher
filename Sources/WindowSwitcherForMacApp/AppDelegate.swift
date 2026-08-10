@@ -45,7 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async { [weak self] in
                 self?.switcherController.showForMenu()
             }
-        } else if !permissions.canRunSwitcher || permissions.screenRecording != .granted {
+        } else if
+            ProcessInfo.processInfo.arguments.contains("--preferences")
+                || !permissions.canRunSwitcher
+                || permissions.screenRecording != .granted
+        {
             preferencesController.showWindow(nil)
             preferencesController.window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)

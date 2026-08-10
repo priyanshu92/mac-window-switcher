@@ -2,8 +2,6 @@
 
 A native macOS menu bar app that replaces Command-Tab's app icon strip with a visual switcher for individual windows.
 
-![Window Switcher app icon](Resources/AppIcon.png)
-
 ## What it does
 
 - Hold `Command` and tap `Tab` to open a filmstrip of window previews.
@@ -28,7 +26,22 @@ A native macOS menu bar app that replaces Command-Tab's app icon strip with a vi
 The app opens its preferences window on first launch so these permissions can be granted.
 macOS may require the app to be restarted after a permission is enabled.
 
-## Build and run
+## Install
+
+1. Download the latest `Window-Switcher-*.app.zip` from the [Releases page](https://github.com/priyanshu92/mac-window-switcher/releases/latest).
+2. Double-click the zip in Finder to extract it.
+3. Drag `Window Switcher.app` into the Applications folder.
+4. Launch the app once. If macOS blocks it, click **Done**, then open **System Settings > Privacy & Security** and click **Open Anyway**.
+5. Grant Accessibility, Screen Recording, and Input Monitoring permissions when prompted.
+
+If Gatekeeper still blocks the app, run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Window Switcher.app"
+open "/Applications/Window Switcher.app"
+```
+
+## Development
 
 ```bash
 swift run WindowSwitcherForMacApp
@@ -40,13 +53,19 @@ Launch directly into the switcher overlay while developing:
 swift run WindowSwitcherForMacApp --preview
 ```
 
+Open Preferences directly:
+
+```bash
+swift run WindowSwitcherForMacApp --preferences
+```
+
 Run the validation suite and debug build:
 
 ```bash
 ./Scripts/validate.sh
 ```
 
-Install a release build as `/Applications/Window Switcher.app`:
+Build and install the current source:
 
 ```bash
 ./Scripts/install.sh
