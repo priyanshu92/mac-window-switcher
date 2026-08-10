@@ -81,3 +81,7 @@ Sources/
 ├── ValidationRunner/           # Isolated persistence and behavior assertions
 └── WindowSwitcherForMacApp/    # Menu bar lifecycle, preferences, overlay and SwiftUI cards
 ```
+
+## License
+
+Window Switcher for Mac is available under the [MIT License](LICENSE).
