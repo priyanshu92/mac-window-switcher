@@ -1,6 +1,8 @@
 # Window Switcher for Mac
 
-A native macOS menu bar app that replaces Command-Tab's app icon strip with a visual switcher for individual windows.
+A dead-simple window switcher for macOS that brings the Windows-style Alt-Tab experience to your Mac, with live previews for every window.
+
+![Window Switcher showing live previews of two browser windows](Resources/WindowSwitcherPreview.png)
 
 ## What it does
 
