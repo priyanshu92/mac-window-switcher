@@ -222,6 +222,27 @@ public enum WindowPreviewLayout {
     }
 }
 
+public enum DockWindowPreviewLayout {
+    public static let horizontalChrome: CGFloat = 16
+    public static let bottomChrome: CGFloat = 8
+
+    public static func aspectRatio(windowSize: CGSize) -> CGFloat {
+        guard windowSize.width > 0, windowSize.height > 0 else {
+            return 16.0 / 9.0
+        }
+        return windowSize.width / windowSize.height
+    }
+
+    public static func cardWidth(
+        windowSize: CGSize,
+        previewHeight: CGFloat
+    ) -> CGFloat {
+        let contentHeight = max(1, previewHeight - bottomChrome)
+        return contentHeight * aspectRatio(windowSize: windowSize)
+            + horizontalChrome
+    }
+}
+
 public enum WindowApplicationKind: Equatable, Sendable {
     case regular
     case accessory

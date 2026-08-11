@@ -17,6 +17,7 @@ enum ValidationRunner {
         validateWindowPresentationFiltering()
         validateInitialWindowDiscovery()
         validateWindowPreviewLayout()
+        validateDockWindowPreviewLayout()
         validateWindowApplicationEligibility()
         validateAccessoryWindowScanCache()
         validateLiveRefreshCadence()
@@ -122,6 +123,25 @@ enum ValidationRunner {
         expect(
             !InitialWindowDiscovery.shouldRefreshPreviews(hasCachedWindows: true),
             "Repeat discovery should reuse the filtered preview cache"
+        )
+    }
+
+    private static func validateDockWindowPreviewLayout() {
+        expect(
+            abs(
+                DockWindowPreviewLayout.cardWidth(
+                    windowSize: CGSize(width: 1600, height: 900),
+                    previewHeight: 120
+                ) - 215.11
+            ) < 0.1,
+            "Dock cards should derive their width from the source window aspect ratio"
+        )
+        expect(
+            DockWindowPreviewLayout.cardWidth(
+                windowSize: CGSize(width: 900, height: 1600),
+                previewHeight: 120
+            ) < 100,
+            "Portrait windows should produce narrow Dock cards without side whitespace"
         )
     }
 

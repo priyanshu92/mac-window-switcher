@@ -29,6 +29,22 @@ struct SwitcherView: View {
         Group {
             if model.windows.isEmpty {
                 emptyState
+            } else if model.isDockPreview {
+                HStack(spacing: 8) {
+                    ForEach(Array(model.windows.enumerated()), id: \.element.id) {
+                        index,
+                        window in
+                        windowCard(
+                            window: window,
+                            index: index,
+                            cardWidth: DockWindowPreviewLayout.cardWidth(
+                                windowSize: window.bounds.size,
+                                previewHeight: model.previewHeight
+                            )
+                        )
+                    }
+                }
+                .padding(6)
             } else {
                 LazyVGrid(
                     columns: Array(
@@ -41,32 +57,45 @@ struct SwitcherView: View {
                     spacing: model.isDockPreview ? 8 : 12
                 ) {
                     ForEach(Array(model.windows.enumerated()), id: \.element.id) { index, window in
-                        WindowCard(
+                        windowCard(
                             window: window,
-                            isSelected: index == model.selectedIndex,
-                            cardWidth: model.cardWidth,
-                            previewHeight: model.previewHeight,
-                            showWindowTitle: model.showWindowTitles,
-                            isDockPreview: model.isDockPreview,
-                            showsCloseButton: model.showsCloseButtons,
-                            onHover: { hovering in
-                                onHover(hovering ? index : nil)
-                            },
-                            onClose: { onClose(index) }
+                            index: index,
+                            cardWidth: model.cardWidth
                         )
-                        .onTapGesture {
-                            onSelect(index)
-                        }
                     }
                 }
-                .padding(model.isDockPreview ? 6 : 18)
+                .padding(18)
             }
         }
+
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             if !model.isDockPreview {
                 backdrop
             }
+        }
+    }
+
+    private func windowCard(
+        window: SwitchableWindow,
+        index: Int,
+        cardWidth: CGFloat
+    ) -> some View {
+        WindowCard(
+            window: window,
+            isSelected: index == model.selectedIndex,
+            cardWidth: cardWidth,
+            previewHeight: model.previewHeight,
+            showWindowTitle: model.showWindowTitles,
+            isDockPreview: model.isDockPreview,
+            showsCloseButton: model.showsCloseButtons,
+            onHover: { hovering in
+                onHover(hovering ? index : nil)
+            },
+            onClose: { onClose(index) }
+        )
+        .onTapGesture {
+            onSelect(index)
         }
     }
 
@@ -105,6 +134,8 @@ struct SwitcherView: View {
 }
 
 private struct WindowCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let window: SwitchableWindow
     let isSelected: Bool
     let cardWidth: CGFloat
@@ -118,6 +149,32 @@ private struct WindowCard: View {
 
     private var isHighlighted: Bool {
         isSelected || isHovered
+    }
+
+    private var dockOuterBorder: Color {
+        colorScheme == .dark
+            ? .white.opacity(0.34)
+            : .black.opacity(0.30)
+    }
+
+    private var dockInnerHighlight: Color {
+        colorScheme == .dark
+            ? .white.opacity(0.12)
+            : .white.opacity(0.88)
+    }
+
+    private var dockPreviewEdge: Color {
+        colorScheme == .dark
+            ? .white.opacity(0.28)
+            : .black.opacity(0.24)
+    }
+
+    private var displayedPreviewWidth: CGFloat {
+        isDockPreview ? cardWidth - 16 : cardWidth
+    }
+
+    private var displayedPreviewHeight: CGFloat {
+        isDockPreview ? previewHeight - 8 : previewHeight
     }
 
     var body: some View {
@@ -165,9 +222,21 @@ private struct WindowCard: View {
             }
 
             preview
-                .frame(width: cardWidth, height: previewHeight)
+                .frame(
+                    width: displayedPreviewWidth,
+                    height: displayedPreviewHeight
+                )
                 .clipped()
                 .background(.black.opacity(0.24))
+                .overlay {
+                    if isDockPreview {
+                        Rectangle()
+                            .strokeBorder(
+                                dockPreviewEdge,
+                                lineWidth: 1.25
+                            )
+                    }
+                }
                 .overlay(alignment: .topTrailing) {
                     if window.isMinimized {
                         Image(systemName: "minus")
@@ -178,6 +247,14 @@ private struct WindowCard: View {
                     }
                 }
         }
+        .clipShape(
+                RoundedRectangle(
+                    cornerRadius: isDockPreview ? 4 : 0,
+                    style: .continuous
+                )
+        )
+        .padding(.horizontal, isDockPreview ? 8 : 0)
+        .padding(.bottom, isDockPreview ? 8 : 0)
             .frame(width: cardWidth, height: previewHeight + 44)
                 .background(
                     isDockPreview
@@ -190,9 +267,18 @@ private struct WindowCard: View {
                 .stroke(
                     isHighlighted
                         ? Color(nsColor: .controlAccentColor)
-                        : .white.opacity(0.12),
-                    lineWidth: isHighlighted ? 4 : 1
+                        : isDockPreview
+                            ? dockOuterBorder
+                            : .white.opacity(0.12),
+                    lineWidth: isHighlighted ? 4 : isDockPreview ? 1.5 : 1
                 )
+            }
+            .overlay {
+                if isDockPreview, !isHighlighted {
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        .inset(by: 1.5)
+                        .stroke(dockInnerHighlight, lineWidth: 1)
+                }
             }
             .shadow(
                 color: isDockPreview
@@ -213,13 +299,19 @@ private struct WindowCard: View {
         if let image = window.preview {
             if WindowPreviewLayout.shouldFit(
                 windowBounds: CGRect(origin: .zero, size: image.size),
-                previewSize: CGSize(width: cardWidth, height: previewHeight)
+                previewSize: CGSize(
+                    width: displayedPreviewWidth,
+                    height: displayedPreviewHeight
+                )
             ) {
-                ZStack {
+                ZStack(alignment: .top) {
                     Image(nsImage: image)
                         .resizable()
                         .scaledToFill()
-                        .frame(width: cardWidth, height: previewHeight)
+                        .frame(
+                            width: displayedPreviewWidth,
+                            height: displayedPreviewHeight
+                        )
                         .clipped()
                         .blur(radius: 14)
                         .opacity(0.5)
@@ -227,7 +319,11 @@ private struct WindowCard: View {
                     Image(nsImage: image)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: cardWidth, height: previewHeight)
+                        .frame(
+                            width: displayedPreviewWidth,
+                            height: displayedPreviewHeight,
+                            alignment: .top
+                        )
                 }
             } else {
                 Image(nsImage: image)

@@ -363,9 +363,65 @@ final class SwitcherController {
         let availableWidth = max(1, visibleFrame.width - 64)
         let availableHeight = max(1, visibleFrame.height - 64)
         let screenAspectRatio = displayAspectRatio(for: screen) ?? (16.0 / 9.0)
+
+        if dockProcessIdentifier != nil {
+            let windowCount = max(viewModel.windows.count, 1)
+            let spacingWidth = CGFloat(max(windowCount - 1, 0)) * cardSpacing
+            let fixedWidth = panelPadding * 2
+                + spacingWidth
+                + CGFloat(windowCount) * DockWindowPreviewLayout.horizontalChrome
+            let aspectRatioSum = viewModel.windows.reduce(CGFloat.zero) {
+                $0 + DockWindowPreviewLayout.aspectRatio(windowSize: $1.bounds.size)
+            }
+            let targetPreviewHeight = min(
+                120,
+                max(96, visibleFrame.height / 8)
+            )
+            let maximumContentHeight = aspectRatioSum > 0
+                ? (availableWidth - fixedWidth) / aspectRatioSum
+                : targetPreviewHeight - DockWindowPreviewLayout.bottomChrome
+            let contentHeight = min(
+                targetPreviewHeight - DockWindowPreviewLayout.bottomChrome,
+                max(64, maximumContentHeight)
+            )
+            let dockPreviewHeight =
+                contentHeight + DockWindowPreviewLayout.bottomChrome
+            let cardWidths = viewModel.windows.map {
+                DockWindowPreviewLayout.cardWidth(
+                    windowSize: $0.bounds.size,
+                    previewHeight: dockPreviewHeight
+                )
+            }
+            let width = panelPadding * 2
+                + cardWidths.reduce(0, +)
+                + spacingWidth
+            let panelHeight = panelPadding * 2
+                + Self.captionHeight
+                + dockPreviewHeight
+
+            viewModel.columnCount = windowCount
+            viewModel.cardWidth = cardWidths.first ?? 200
+            viewModel.previewHeight = dockPreviewHeight
+
+            let origin = dockPanelOrigin(
+                panelSize: NSSize(width: width, height: panelHeight),
+                anchorPoint: dockAnchorPoint ?? NSEvent.mouseLocation,
+                screenFrame: screen?.frame ?? visibleFrame,
+                visibleFrame: visibleFrame
+            )
+            panel.setFrame(
+                NSRect(
+                    origin: origin,
+                    size: NSSize(width: width, height: panelHeight)
+                ),
+                display: true
+            )
+            return
+        }
+
         var cardWidth = dockProcessIdentifier == nil
             ? min(300, max(210, visibleFrame.width / 5.5))
-            : min(260, max(190, visibleFrame.width / 6.5))
+            : min(228, max(172, visibleFrame.width / 7.5))
         var previewHeight = cardWidth / screenAspectRatio
         var columnCount = 1
         var rowCount = 1
