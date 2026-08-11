@@ -134,7 +134,9 @@ private struct WindowCard: View {
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(
-                    isSelected ? .white.opacity(0.95) : .white.opacity(0.12),
+                    isSelected
+                        ? Color(nsColor: .controlAccentColor)
+                        : .white.opacity(0.12),
                     lineWidth: isSelected ? 4 : 1
                 )
             }
