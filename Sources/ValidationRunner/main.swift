@@ -8,6 +8,7 @@ enum ValidationRunner {
         validateWindowDisplayTitles()
         validateWindowRecordMatching()
         validateInitialWindowSelection()
+        validateRepeatedWindowSwitching()
         validateWindowPresentationFiltering()
         validateFullScreenActivationPlan()
         print("All validations passed.")
@@ -86,6 +87,57 @@ enum ValidationRunner {
         expect(
             InitialWindowSelection.index(windowCount: 5, movingForward: false) == 4,
             "Command-Shift-Tab should initially select the last window"
+        )
+    }
+
+    private static func validateRepeatedWindowSwitching() {
+        let discoveredOrder = ["current", "previous", "older"]
+        var recency = WindowSwitchRecency()
+        var displayedOrder = recency.reconcile(
+            discoveredWindowIdentifiers: discoveredOrder,
+            currentWindowIdentifier: "current"
+        )
+        expect(
+            displayedOrder == ["current", "previous", "older"],
+            "Initial discovery should retain Window Server order"
+        )
+
+        recency.recordSelection("previous")
+        displayedOrder = recency.reconcile(
+            discoveredWindowIdentifiers: discoveredOrder,
+            currentWindowIdentifier: "previous"
+        )
+        expect(
+            displayedOrder == ["previous", "current", "older"],
+            "The selected window should move first and the window left behind should move second"
+        )
+
+        recency.recordSelection("current")
+        displayedOrder = recency.reconcile(
+            discoveredWindowIdentifiers: discoveredOrder,
+            currentWindowIdentifier: "current"
+        )
+        expect(
+            displayedOrder == ["current", "previous", "older"],
+            "Repeated Command-Tab gestures should reorder the two recent windows"
+        )
+
+        displayedOrder = recency.reconcile(
+            discoveredWindowIdentifiers: ["current", "older", "new"],
+            currentWindowIdentifier: "current"
+        )
+        expect(
+            displayedOrder == ["current", "older", "new"],
+            "Closed windows should be removed and new windows should join the end"
+        )
+
+        displayedOrder = recency.reconcile(
+            discoveredWindowIdentifiers: ["current", "older", "new"],
+            currentWindowIdentifier: "new"
+        )
+        expect(
+            displayedOrder == ["new", "current", "older"],
+            "Focusing a window outside the switcher should promote it to the front"
         )
     }
 

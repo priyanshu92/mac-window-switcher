@@ -16,6 +16,8 @@ final class SwitcherController {
     private var hostingController: NSHostingController<SwitcherView>!
     private var liveRefreshTimer: Timer?
     private var sessionScreen: NSScreen?
+    private var sessionOriginWindowIdentifier: String?
+    private var windowSwitchRecency = WindowSwitchRecency()
 
     init(windowService: MacWindowService, settingsStore: SwitcherSettingsStore) {
         self.windowService = windowService
@@ -72,6 +74,7 @@ final class SwitcherController {
         panel.orderOut(nil)
         viewModel.windows = []
         sessionScreen = nil
+        sessionOriginWindowIdentifier = nil
     }
 
     private func cycle(by offset: Int) {
@@ -82,6 +85,7 @@ final class SwitcherController {
                 return
             }
 
+            sessionOriginWindowIdentifier = viewModel.windows.first?.id
             viewModel.selectedIndex = InitialWindowSelection.index(
                 windowCount: viewModel.windows.count,
                 movingForward: offset > 0
@@ -100,9 +104,21 @@ final class SwitcherController {
         let selectedIdentifier = preservingSelection ? viewModel.selectedWindow?.id : nil
         let settings = settingsStore.load()
         viewModel.showWindowTitles = settings.showWindowTitles
-        viewModel.windows = windowService.discoverWindows(
+        let discoveredWindows = windowService.discoverWindows(
             includeMinimized: settings.includeMinimizedWindows
         )
+        let windowsByIdentifier = Dictionary(
+            uniqueKeysWithValues: discoveredWindows.map { ($0.id, $0) }
+        )
+        let discoveredIdentifiers = discoveredWindows.map(\.id)
+        let currentIdentifier = panel.isVisible
+            ? sessionOriginWindowIdentifier
+            : windowService.focusedWindowIdentifier()
+        let orderedIdentifiers = windowSwitchRecency.reconcile(
+            discoveredWindowIdentifiers: discoveredIdentifiers,
+            currentWindowIdentifier: currentIdentifier
+        )
+        viewModel.windows = orderedIdentifiers.compactMap { windowsByIdentifier[$0] }
 
         if
             let selectedIdentifier,
@@ -188,9 +204,11 @@ final class SwitcherController {
 
         stopLiveUpdates()
         panel.orderOut(nil)
+        windowSwitchRecency.recordSelection(selected.id)
         windowService.activate(selected)
         viewModel.windows = []
         sessionScreen = nil
+        sessionOriginWindowIdentifier = nil
     }
 
     private func selectAndCommit(_ index: Int) {

@@ -73,6 +73,47 @@ public enum InitialWindowSelection {
     }
 }
 
+public struct WindowSwitchRecency: Equatable, Sendable {
+    public private(set) var orderedWindowIdentifiers: [String] = []
+
+    public init() {}
+
+    public mutating func reconcile(
+        discoveredWindowIdentifiers: [String],
+        currentWindowIdentifier: String?
+    ) -> [String] {
+        let discoveredIdentifiers = Set(discoveredWindowIdentifiers)
+        orderedWindowIdentifiers.removeAll {
+            !discoveredIdentifiers.contains($0)
+        }
+
+        let knownIdentifiers = Set(orderedWindowIdentifiers)
+        orderedWindowIdentifiers.append(
+            contentsOf: discoveredWindowIdentifiers.filter {
+                !knownIdentifiers.contains($0)
+            }
+        )
+
+        if let currentWindowIdentifier {
+            promote(currentWindowIdentifier)
+        }
+
+        return orderedWindowIdentifiers
+    }
+
+    public mutating func recordSelection(_ selectedWindowIdentifier: String) {
+        promote(selectedWindowIdentifier)
+    }
+
+    private mutating func promote(_ identifier: String) {
+        guard let index = orderedWindowIdentifiers.firstIndex(of: identifier) else {
+            return
+        }
+        orderedWindowIdentifiers.remove(at: index)
+        orderedWindowIdentifiers.insert(identifier, at: 0)
+    }
+}
+
 public enum WindowPresentationFilter {
     public static func shouldInclude(
         hasPreview: Bool,
