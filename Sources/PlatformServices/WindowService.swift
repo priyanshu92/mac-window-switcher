@@ -398,7 +398,7 @@ public final class MacWindowService {
         let screenCaptureGranted = CGPreflightScreenCaptureAccess()
         return windows
             .filter {
-                !refreshPreviews || WindowPresentationFilter.shouldInclude(
+                WindowPresentationFilter.shouldInclude(
                     hasPreview: $0.preview != nil,
                     screenCaptureGranted: screenCaptureGranted
                 )

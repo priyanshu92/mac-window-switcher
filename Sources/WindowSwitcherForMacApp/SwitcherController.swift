@@ -240,10 +240,16 @@ final class SwitcherController {
         let selectedIdentifier = preservingSelection ? viewModel.selectedWindow?.id : nil
         let settings = settingsStore.load()
         viewModel.showWindowTitles = settings.showWindowTitles
+        let shouldRefreshPreviews =
+            panel.isVisible
+            || dockProcessIdentifier != nil
+            || InitialWindowDiscovery.shouldRefreshPreviews(
+                hasCachedWindows: !cachedGlobalWindows.isEmpty
+            )
         let discoveredWindows = windowService.discoverWindows(
             includeMinimized: settings.includeMinimizedWindows,
             processIdentifier: dockProcessIdentifier,
-            refreshPreviews: panel.isVisible || dockProcessIdentifier != nil,
+            refreshPreviews: shouldRefreshPreviews,
             previewRefreshLimit:
                 panel.isVisible && dockProcessIdentifier == nil ? 4 : nil
         )

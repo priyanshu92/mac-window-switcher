@@ -15,6 +15,7 @@ enum ValidationRunner {
         validateTransientWindowDiscovery()
         validateMinimizedWindowOrdering()
         validateWindowPresentationFiltering()
+        validateInitialWindowDiscovery()
         validateWindowPreviewLayout()
         validateWindowApplicationEligibility()
         validateAccessoryWindowScanCache()
@@ -110,6 +111,17 @@ enum ValidationRunner {
         expect(
             WindowDisplayTitle.resolve(windowTitle: "  ", appName: "Finder") == "Finder",
             "Untitled windows should fall back to their app name"
+        )
+    }
+
+    private static func validateInitialWindowDiscovery() {
+        expect(
+            InitialWindowDiscovery.shouldRefreshPreviews(hasCachedWindows: false),
+            "First discovery should capture previews before presenting windows"
+        )
+        expect(
+            !InitialWindowDiscovery.shouldRefreshPreviews(hasCachedWindows: true),
+            "Repeat discovery should reuse the filtered preview cache"
         )
     }
 

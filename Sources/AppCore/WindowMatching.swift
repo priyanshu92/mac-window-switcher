@@ -194,6 +194,12 @@ public enum WindowPresentationFilter {
     }
 }
 
+public enum InitialWindowDiscovery {
+    public static func shouldRefreshPreviews(hasCachedWindows: Bool) -> Bool {
+        !hasCachedWindows
+    }
+}
+
 public enum WindowPreviewLayout {
     public static func shouldFit(
         windowBounds: CGRect,
