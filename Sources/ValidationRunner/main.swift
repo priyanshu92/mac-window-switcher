@@ -10,6 +10,8 @@ enum ValidationRunner {
         validateInitialWindowSelection()
         validateRepeatedWindowSwitching()
         validateWindowPresentationFiltering()
+        validateWindowPreviewLayout()
+        validateWindowApplicationEligibility()
         validateFullScreenActivationPlan()
         print("All validations passed.")
     }
@@ -155,6 +157,58 @@ enum ValidationRunner {
                 screenCaptureGranted: false
             ),
             "Permission setup should retain icon fallbacks until capture is granted"
+        )
+    }
+
+    private static func validateWindowPreviewLayout() {
+        expect(
+            WindowPreviewLayout.shouldFit(
+                windowBounds: CGRect(x: 0, y: 0, width: 900, height: 700),
+                previewSize: CGSize(width: 300, height: 169)
+            ),
+            "Compact settings windows should fit without cropping"
+        )
+        expect(
+            !WindowPreviewLayout.shouldFit(
+                windowBounds: CGRect(x: 0, y: 0, width: 1600, height: 900),
+                previewSize: CGSize(width: 300, height: 169)
+            ),
+            "Display-shaped windows should continue filling their cards"
+        )
+    }
+
+    private static func validateWindowApplicationEligibility() {
+        expect(
+            WindowApplicationEligibility.shouldInclude(
+                isCurrentApplication: false,
+                isTerminated: false,
+                kind: .accessory
+            ),
+            "Menu bar app windows should be eligible for the switcher"
+        )
+        expect(
+            !WindowApplicationEligibility.shouldInclude(
+                isCurrentApplication: false,
+                isTerminated: false,
+                kind: .prohibited
+            ),
+            "Background and system processes should remain excluded"
+        )
+        expect(
+            !WindowApplicationEligibility.shouldInclude(
+                isCurrentApplication: true,
+                isTerminated: false,
+                kind: .accessory
+            ),
+            "The switcher should not list its own windows"
+        )
+        expect(
+            !WindowApplicationEligibility.shouldInclude(
+                isCurrentApplication: false,
+                isTerminated: true,
+                kind: .regular
+            ),
+            "Terminated applications should remain excluded"
         )
     }
 

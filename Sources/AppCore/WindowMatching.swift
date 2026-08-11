@@ -123,6 +123,46 @@ public enum WindowPresentationFilter {
     }
 }
 
+public enum WindowPreviewLayout {
+    public static func shouldFit(
+        windowBounds: CGRect,
+        previewSize: CGSize
+    ) -> Bool {
+        guard
+            windowBounds.width > 0,
+            windowBounds.height > 0,
+            previewSize.width > 0,
+            previewSize.height > 0
+        else {
+            return false
+        }
+
+        let windowAspectRatio = windowBounds.width / windowBounds.height
+        let previewAspectRatio = previewSize.width / previewSize.height
+        let aspectRatioDifference = max(windowAspectRatio, previewAspectRatio)
+            / min(windowAspectRatio, previewAspectRatio)
+        return aspectRatioDifference > 1.12
+    }
+}
+
+public enum WindowApplicationKind: Equatable, Sendable {
+    case regular
+    case accessory
+    case prohibited
+}
+
+public enum WindowApplicationEligibility {
+    public static func shouldInclude(
+        isCurrentApplication: Bool,
+        isTerminated: Bool,
+        kind: WindowApplicationKind
+    ) -> Bool {
+        !isCurrentApplication
+            && !isTerminated
+            && kind != .prohibited
+    }
+}
+
 public enum WindowActivationStep: Equatable, Sendable {
     case unminimize
     case frontProcessWithWindowIdentifier

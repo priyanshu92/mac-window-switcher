@@ -1,3 +1,4 @@
+import AppCore
 import AppKit
 import PlatformServices
 import SwiftUI
@@ -115,6 +116,7 @@ private struct WindowCard: View {
 
             preview
                 .frame(width: cardWidth, height: previewHeight)
+                .clipped()
                 .background(.black.opacity(0.24))
                 .overlay(alignment: .topTrailing) {
                     if window.isMinimized {
@@ -143,10 +145,29 @@ private struct WindowCard: View {
     @ViewBuilder
     private var preview: some View {
         if let image = window.preview {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFill()
-                .clipped()
+            if WindowPreviewLayout.shouldFit(
+                windowBounds: CGRect(origin: .zero, size: image.size),
+                previewSize: CGSize(width: cardWidth, height: previewHeight)
+            ) {
+                ZStack {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: cardWidth, height: previewHeight)
+                        .clipped()
+                        .blur(radius: 14)
+                        .opacity(0.5)
+
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: cardWidth, height: previewHeight)
+                }
+            } else {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            }
         } else {
             ZStack {
                 LinearGradient(

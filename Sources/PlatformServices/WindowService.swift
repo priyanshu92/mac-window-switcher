@@ -293,9 +293,27 @@ public final class MacWindowService {
     }
 
     private func isEligible(_ application: NSRunningApplication) -> Bool {
-        application.processIdentifier != ProcessInfo.processInfo.processIdentifier
-            && application.activationPolicy == .regular
-            && !application.isTerminated
+        WindowApplicationEligibility.shouldInclude(
+            isCurrentApplication:
+                application.processIdentifier == ProcessInfo.processInfo.processIdentifier,
+            isTerminated: application.isTerminated,
+            kind: applicationKind(for: application.activationPolicy)
+        )
+    }
+
+    private func applicationKind(
+        for activationPolicy: NSApplication.ActivationPolicy
+    ) -> WindowApplicationKind {
+        switch activationPolicy {
+        case .regular:
+            .regular
+        case .accessory:
+            .accessory
+        case .prohibited:
+            .prohibited
+        @unknown default:
+            .prohibited
+        }
     }
 
     private func coreGraphicsWindowRecords() -> [CGWindowRecord] {
