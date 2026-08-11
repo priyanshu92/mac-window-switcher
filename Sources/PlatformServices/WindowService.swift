@@ -66,9 +66,43 @@ public final class MacWindowService {
 
     public init() {}
 
+    public func activeWindowIdentifier() -> String? {
+        guard
+            let application = NSWorkspace.shared.frontmostApplication,
+            application.processIdentifier != ProcessInfo.processInfo.processIdentifier
+        else {
+            return nil
+        }
+
+        let applicationElement = AXUIElementCreateApplication(application.processIdentifier)
+        if
+            let focusedWindow = copyAttribute(
+                applicationElement,
+                attribute: kAXFocusedWindowAttribute as CFString,
+                as: AXUIElement.self
+            ),
+            let identifier = AccessibilityWindowResolver.identifier(of: focusedWindow)
+        {
+            return "\(application.processIdentifier)-\(identifier)"
+        }
+
+        return coreGraphicsWindowRecords().first {
+            $0.processIdentifier == application.processIdentifier
+        }.map {
+            "\(application.processIdentifier)-\($0.identifier)"
+        }
+    }
+
     public func focusedWindowIdentifier(in windows: [SwitchableWindow]) -> String? {
         guard let application = NSWorkspace.shared.frontmostApplication else {
             return nil
+        }
+
+        if
+            let activeWindowIdentifier = activeWindowIdentifier(),
+            windows.contains(where: { $0.id == activeWindowIdentifier })
+        {
+            return activeWindowIdentifier
         }
 
         let applicationElement = AXUIElementCreateApplication(application.processIdentifier)

@@ -8,9 +8,10 @@ enum ValidationRunner {
         validateWindowDisplayTitles()
         validateWindowRecordMatching()
         validateFocusedWindowMatching()
+        validatePointerDisplaySelection()
         validateInitialWindowSelection()
         validateRepeatedWindowSwitching()
-        validateExternalWindowSwitching()
+        validateEventDrivenWindowSwitching()
         validateTransientWindowDiscovery()
         validateMinimizedWindowOrdering()
         validateWindowPresentationFiltering()
@@ -118,6 +119,19 @@ enum ValidationRunner {
         )
     }
 
+    private static func validatePointerDisplaySelection() {
+        expect(
+            PointerDisplaySelection.index(
+                at: CGPoint(x: 2_800, y: 500),
+                displayFrames: [
+                    CGRect(x: 0, y: 0, width: 2_560, height: 1_440),
+                    CGRect(x: 2_560, y: 0, width: 2_560, height: 1_440),
+                ]
+            ) == 1,
+            "The switcher should open on the display containing the pointer"
+        )
+    }
+
     private static func validateInitialWindowSelection() {
         expect(
             InitialWindowSelection.index(windowCount: 5, movingForward: true) == 1,
@@ -180,32 +194,18 @@ enum ValidationRunner {
         )
     }
 
-    private static func validateExternalWindowSwitching() {
+    private static func validateEventDrivenWindowSwitching() {
         var recency = WindowSwitchRecency()
-        _ = recency.reconcile(
-            discoveredWindowIdentifiers: ["old-current", "older", "terminal", "teams"],
-            currentWindowIdentifier: "old-current"
-        )
+        recency.recordActivation("teams")
+        recency.recordActivation("browser")
 
-        let externallyUpdatedOrder = recency.reconcile(
-            discoveredWindowIdentifiers: ["terminal", "teams", "old-current", "older"],
-            currentWindowIdentifier: "terminal",
-            synchronizeWithDiscoveredOrder: true
+        let displayedOrder = recency.reconcile(
+            discoveredWindowIdentifiers: ["devbox", "terminal", "teams", "browser"],
+            currentWindowIdentifier: "browser"
         )
         expect(
-            externallyUpdatedOrder == ["terminal", "teams", "old-current", "older"],
-            "External activation should synchronize the full MRU list with Window Server order"
-        )
-
-        recency.recordSelection("teams")
-        let staleWindowServerOrder = recency.reconcile(
-            discoveredWindowIdentifiers: ["terminal", "teams", "old-current", "older"],
-            currentWindowIdentifier: "teams",
-            synchronizeWithDiscoveredOrder: true
-        )
-        expect(
-            staleWindowServerOrder == ["teams", "terminal", "old-current", "older"],
-            "A stale Window Server order should not undo a switcher selection"
+            displayedOrder == ["browser", "teams", "devbox", "terminal"],
+            "Observed activation events should define MRU order independently of discovery order"
         )
     }
 

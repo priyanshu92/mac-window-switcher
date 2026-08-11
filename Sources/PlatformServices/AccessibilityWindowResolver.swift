@@ -85,7 +85,7 @@ enum AccessibilityWindowResolver {
         return nil
     }
 
-    private static func identifier(of element: AXUIElement) -> CGWindowID? {
+    static func identifier(of element: AXUIElement) -> CGWindowID? {
         var identifier = CGWindowID()
         guard privateAXWindowIdentifier(element, &identifier) == .success else {
             return nil

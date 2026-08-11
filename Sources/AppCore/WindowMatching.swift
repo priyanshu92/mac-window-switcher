@@ -96,6 +96,17 @@ public enum FocusedWindowMatcher {
     }
 }
 
+public enum PointerDisplaySelection {
+    public static func index(
+        at pointerLocation: CGPoint,
+        displayFrames: [CGRect]
+    ) -> Int? {
+        displayFrames.firstIndex {
+            $0.contains(pointerLocation)
+        }
+    }
+}
+
 public enum InitialWindowSelection {
     public static func index(windowCount: Int, movingForward: Bool) -> Int {
         guard windowCount > 1 else { return 0 }
@@ -114,21 +125,9 @@ public struct WindowSwitchRecency: Equatable, Sendable {
     public mutating func reconcile(
         discoveredWindowIdentifiers: [String],
         currentWindowIdentifier: String?,
-        minimizedWindowIdentifiers: Set<String> = [],
-        synchronizeWithDiscoveredOrder: Bool = false
+        minimizedWindowIdentifiers: Set<String> = []
     ) -> [String] {
         let discoveredIdentifiers = Set(discoveredWindowIdentifiers)
-
-        if
-            synchronizeWithDiscoveredOrder,
-            let currentWindowIdentifier,
-            discoveredWindowIdentifiers.first == currentWindowIdentifier
-        {
-            let undiscoveredIdentifiers = orderedWindowIdentifiers.filter {
-                !discoveredIdentifiers.contains($0)
-            }
-            orderedWindowIdentifiers = discoveredWindowIdentifiers + undiscoveredIdentifiers
-        }
 
         orderedWindowIdentifiers = orderedWindowIdentifiers.filter { identifier in
             guard !discoveredIdentifiers.contains(identifier) else {
@@ -174,11 +173,14 @@ public struct WindowSwitchRecency: Equatable, Sendable {
         promote(selectedWindowIdentifier)
     }
 
+    public mutating func recordActivation(_ activatedWindowIdentifier: String) {
+        promote(activatedWindowIdentifier)
+    }
+
     private mutating func promote(_ identifier: String) {
-        guard let index = orderedWindowIdentifiers.firstIndex(of: identifier) else {
-            return
+        if let index = orderedWindowIdentifiers.firstIndex(of: identifier) {
+            orderedWindowIdentifiers.remove(at: index)
         }
-        orderedWindowIdentifiers.remove(at: index)
         orderedWindowIdentifiers.insert(identifier, at: 0)
     }
 }
@@ -274,6 +276,10 @@ public struct AccessoryWindowScanCache: Sendable {
 }
 
 public enum WindowLiveRefresh {
+    public static let interval: TimeInterval = 0.5
+}
+
+public enum WindowActivityTracking {
     public static let interval: TimeInterval = 0.5
 }
 

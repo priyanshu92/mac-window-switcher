@@ -20,6 +20,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             windowService: windowService,
             settingsStore: settingsStore
         )
+        switcherController.startActivityTracking()
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(workspaceApplicationDidActivate),
+            name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
         statusItemController = StatusItemController(
             settingsStore: settingsStore,
             permissionsService: permissionsService,
@@ -59,6 +66,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidBecomeActive(_ notification: Notification) {
         preferencesController?.refresh()
         statusItemController?.refresh()
+    }
+
+    @objc
+    private func workspaceApplicationDidActivate(_ notification: Notification) {
+        switcherController.observeActiveWindow()
     }
 
     private func startMonitorIfEnabled() {

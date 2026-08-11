@@ -15,6 +15,8 @@ final class SwitcherController {
     private let panel: NSPanel
     private var hostingController: NSHostingController<SwitcherView>!
     private var liveRefreshTimer: Timer?
+    private var activityTrackingTimer: Timer?
+    private var lastObservedActiveWindowIdentifier: String?
     private var sessionScreen: NSScreen?
     private var sessionOriginWindowIdentifier: String?
     private var windowSwitchRecency = WindowSwitchRecency()
@@ -63,7 +65,34 @@ final class SwitcherController {
         }
     }
 
+    func startActivityTracking() {
+        guard activityTrackingTimer == nil else { return }
+
+        observeActiveWindow()
+        let timer = Timer(timeInterval: WindowActivityTracking.interval, repeats: true) {
+            [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.observeActiveWindow()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        activityTrackingTimer = timer
+    }
+
+    func observeActiveWindow() {
+        guard
+            !panel.isVisible,
+            let identifier = windowService.activeWindowIdentifier(),
+            identifier != lastObservedActiveWindowIdentifier
+        else {
+            return
+        }
+        lastObservedActiveWindowIdentifier = identifier
+        windowSwitchRecency.recordActivation(identifier)
+    }
+
     func showForMenu() {
+        prepareSession()
         loadWindows(preservingSelection: false)
         viewModel.selectedIndex = 0
         showPanel()
@@ -79,6 +108,7 @@ final class SwitcherController {
 
     private func cycle(by offset: Int) {
         if !panel.isVisible {
+            prepareSession()
             loadWindows(preservingSelection: false)
             guard !viewModel.windows.isEmpty else {
                 showPanel()
@@ -119,8 +149,7 @@ final class SwitcherController {
             currentWindowIdentifier: currentIdentifier,
             minimizedWindowIdentifiers: Set(
                 discoveredWindows.lazy.filter(\.isMinimized).map(\.id)
-            ),
-            synchronizeWithDiscoveredOrder: !panel.isVisible
+            )
         )
         viewModel.windows = orderedIdentifiers.compactMap { windowsByIdentifier[$0] }
 
@@ -142,14 +171,13 @@ final class SwitcherController {
     }
 
     private func showPanel() {
-        sessionScreen = screenContainingCurrentWindow()
         sizeAndPositionPanel()
         panel.orderFrontRegardless()
         startLiveUpdates()
     }
 
     private func sizeAndPositionPanel() {
-        let screen = sessionScreen ?? screenContainingCurrentWindow()
+        let screen = sessionScreen ?? screenContainingPointer()
         guard let visibleFrame = screen?.visibleFrame else { return }
 
         let availableWidth = max(1, visibleFrame.width - 64)
@@ -244,17 +272,22 @@ final class SwitcherController {
         liveRefreshTimer = nil
     }
 
-    private func screenContainingCurrentWindow() -> NSScreen? {
-        guard let currentWindow = viewModel.windows.first else {
-            let mouseLocation = NSEvent.mouseLocation
-            return NSScreen.screens.first { $0.frame.contains(mouseLocation) } ?? NSScreen.main
-        }
+    private func prepareSession() {
+        sessionScreen = screenContainingPointer()
+    }
 
-        let center = CGPoint(x: currentWindow.bounds.midX, y: currentWindow.bounds.midY)
-        return NSScreen.screens.first { screen in
-            guard let displayID = displayID(for: screen) else { return false }
-            return CGDisplayBounds(displayID).contains(center)
-        } ?? NSScreen.main
+    private func screenContainingPointer() -> NSScreen? {
+        let pointerLocation = NSEvent.mouseLocation
+        let screens = NSScreen.screens
+        guard
+            let index = PointerDisplaySelection.index(
+                at: pointerLocation,
+                displayFrames: screens.map(\.frame)
+            )
+        else {
+            return NSScreen.main
+        }
+        return screens[index]
     }
 
     private func displayAspectRatio(for screen: NSScreen?) -> CGFloat? {
