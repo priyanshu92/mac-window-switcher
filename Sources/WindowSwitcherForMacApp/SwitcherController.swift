@@ -225,7 +225,7 @@ final class SwitcherController {
     private func startLiveUpdates() {
         guard liveRefreshTimer == nil else { return }
 
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: WindowLiveRefresh.interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.panel.isVisible else { return }
                 self.loadWindows(preservingSelection: true)

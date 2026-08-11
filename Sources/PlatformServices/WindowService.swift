@@ -62,6 +62,7 @@ public final class MacWindowService {
     }
 
     private var previewCache: [CGWindowID: NSImage] = [:]
+    private var accessoryWindowScanCache = AccessoryWindowScanCache()
 
     public init() {}
 
@@ -91,10 +92,33 @@ public final class MacWindowService {
         previewCache = previewCache.filter { currentIdentifiers.contains($0.key) }
         let recordsByIdentifier = Dictionary(uniqueKeysWithValues: records.map { ($0.identifier, $0) })
         let frontToBackOrder = Dictionary(uniqueKeysWithValues: records.map { ($0.identifier, $0.order) })
+        let recordOwnerProcessIdentifiers = Set(records.map(\.processIdentifier))
+        let recordIdentifiersByProcess = Dictionary(grouping: records, by: \.processIdentifier)
+            .mapValues { Set($0.map(\.identifier)) }
+        let runningProcessIdentifiers = Set(
+            NSWorkspace.shared.runningApplications.map(\.processIdentifier)
+        )
+        accessoryWindowScanCache.retain(processIdentifiers: runningProcessIdentifiers)
         var windows: [SwitchableWindow] = []
         var seenWindowIdentifiers: Set<CGWindowID> = []
 
-        for app in NSWorkspace.shared.runningApplications where isEligible(app) {
+        for app in NSWorkspace.shared.runningApplications where isEligible(
+            app,
+            ownsWindowServerRecord: recordOwnerProcessIdentifiers.contains(app.processIdentifier)
+        ) {
+            let isAccessory = app.activationPolicy == .accessory
+            let appRecordIdentifiers = recordIdentifiersByProcess[app.processIdentifier] ?? []
+            if
+                isAccessory,
+                !accessoryWindowScanCache.shouldInspect(
+                    processIdentifier: app.processIdentifier,
+                    windowIdentifiers: appRecordIdentifiers
+                )
+            {
+                continue
+            }
+
+            let initialWindowCount = windows.count
             let applicationElement = AXUIElementCreateApplication(app.processIdentifier)
             let accessibilityWindows: [AXUIElement] = copyAttribute(
                 applicationElement,
@@ -171,6 +195,14 @@ public final class MacWindowService {
                     )
                 )
             }
+
+            if isAccessory {
+                accessoryWindowScanCache.recordResult(
+                    processIdentifier: app.processIdentifier,
+                    windowIdentifiers: appRecordIdentifiers,
+                    foundAccessibilityWindow: windows.count > initialWindowCount
+                )
+            }
         }
 
         // Accessibility can be unavailable during first launch. Keep the switcher useful
@@ -178,7 +210,7 @@ public final class MacWindowService {
         for record in records where !seenWindowIdentifiers.contains(record.identifier) {
             guard
                 let app = NSRunningApplication(processIdentifier: record.processIdentifier),
-                isEligible(app)
+                isEligible(app, ownsWindowServerRecord: true)
             else {
                 continue
             }
@@ -219,6 +251,7 @@ public final class MacWindowService {
             }
             return lhs.windowTitle.localizedCaseInsensitiveCompare(rhs.windowTitle) == .orderedAscending
         }
+
     }
 
     public func activate(_ window: SwitchableWindow) {
@@ -292,12 +325,16 @@ public final class MacWindowService {
         AXUIElementPerformAction(element, kAXRaiseAction as CFString)
     }
 
-    private func isEligible(_ application: NSRunningApplication) -> Bool {
-        WindowApplicationEligibility.shouldInclude(
+    private func isEligible(
+        _ application: NSRunningApplication,
+        ownsWindowServerRecord: Bool
+    ) -> Bool {
+        return WindowApplicationEligibility.shouldInclude(
             isCurrentApplication:
                 application.processIdentifier == ProcessInfo.processInfo.processIdentifier,
             isTerminated: application.isTerminated,
-            kind: applicationKind(for: application.activationPolicy)
+            kind: applicationKind(for: application.activationPolicy),
+            ownsWindowServerRecord: ownsWindowServerRecord
         )
     }
 

@@ -12,6 +12,8 @@ enum ValidationRunner {
         validateWindowPresentationFiltering()
         validateWindowPreviewLayout()
         validateWindowApplicationEligibility()
+        validateAccessoryWindowScanCache()
+        validateLiveRefreshCadence()
         validateFullScreenActivationPlan()
         print("All validations passed.")
     }
@@ -182,7 +184,8 @@ enum ValidationRunner {
             WindowApplicationEligibility.shouldInclude(
                 isCurrentApplication: false,
                 isTerminated: false,
-                kind: .accessory
+                kind: .accessory,
+                ownsWindowServerRecord: true
             ),
             "Menu bar app windows should be eligible for the switcher"
         )
@@ -190,7 +193,17 @@ enum ValidationRunner {
             !WindowApplicationEligibility.shouldInclude(
                 isCurrentApplication: false,
                 isTerminated: false,
-                kind: .prohibited
+                kind: .accessory,
+                ownsWindowServerRecord: false
+            ),
+            "Menu bar agents without windows should not receive AX queries"
+        )
+        expect(
+            !WindowApplicationEligibility.shouldInclude(
+                isCurrentApplication: false,
+                isTerminated: false,
+                kind: .prohibited,
+                ownsWindowServerRecord: true
             ),
             "Background and system processes should remain excluded"
         )
@@ -198,7 +211,8 @@ enum ValidationRunner {
             !WindowApplicationEligibility.shouldInclude(
                 isCurrentApplication: true,
                 isTerminated: false,
-                kind: .accessory
+                kind: .accessory,
+                ownsWindowServerRecord: true
             ),
             "The switcher should not list its own windows"
         )
@@ -206,9 +220,49 @@ enum ValidationRunner {
             !WindowApplicationEligibility.shouldInclude(
                 isCurrentApplication: false,
                 isTerminated: true,
-                kind: .regular
+                kind: .regular,
+                ownsWindowServerRecord: true
             ),
             "Terminated applications should remain excluded"
+        )
+    }
+
+    private static func validateAccessoryWindowScanCache() {
+        var cache = AccessoryWindowScanCache()
+        let originalWindowIdentifiers: Set<UInt32> = [10]
+
+        expect(
+            cache.shouldInspect(
+                processIdentifier: 42,
+                windowIdentifiers: originalWindowIdentifiers
+            ),
+            "An accessory app should be inspected before it is cached"
+        )
+        cache.recordResult(
+            processIdentifier: 42,
+            windowIdentifiers: originalWindowIdentifiers,
+            foundAccessibilityWindow: false
+        )
+        expect(
+            !cache.shouldInspect(
+                processIdentifier: 42,
+                windowIdentifiers: originalWindowIdentifiers
+            ),
+            "An unchanged accessory app without AX windows should be skipped"
+        )
+        expect(
+            cache.shouldInspect(
+                processIdentifier: 42,
+                windowIdentifiers: [10, 11]
+            ),
+            "A changed Window Server signature should trigger another AX inspection"
+        )
+    }
+
+    private static func validateLiveRefreshCadence() {
+        expect(
+            WindowLiveRefresh.interval >= 0.5,
+            "Live refresh should leave enough main-thread time for keyboard navigation"
         )
     }
 

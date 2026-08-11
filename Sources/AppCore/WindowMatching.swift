@@ -155,12 +155,57 @@ public enum WindowApplicationEligibility {
     public static func shouldInclude(
         isCurrentApplication: Bool,
         isTerminated: Bool,
-        kind: WindowApplicationKind
+        kind: WindowApplicationKind,
+        ownsWindowServerRecord: Bool
     ) -> Bool {
-        !isCurrentApplication
-            && !isTerminated
-            && kind != .prohibited
+        guard !isCurrentApplication, !isTerminated else {
+            return false
+        }
+
+        switch kind {
+        case .regular:
+            return true
+        case .accessory:
+            return ownsWindowServerRecord
+        case .prohibited:
+            return false
+        }
     }
+}
+
+public struct AccessoryWindowScanCache: Sendable {
+    private var emptyWindowSignatures: [Int32: Set<UInt32>] = [:]
+
+    public init() {}
+
+    public mutating func shouldInspect(
+        processIdentifier: Int32,
+        windowIdentifiers: Set<UInt32>
+    ) -> Bool {
+        emptyWindowSignatures[processIdentifier] != windowIdentifiers
+    }
+
+    public mutating func recordResult(
+        processIdentifier: Int32,
+        windowIdentifiers: Set<UInt32>,
+        foundAccessibilityWindow: Bool
+    ) {
+        if foundAccessibilityWindow {
+            emptyWindowSignatures.removeValue(forKey: processIdentifier)
+        } else {
+            emptyWindowSignatures[processIdentifier] = windowIdentifiers
+        }
+    }
+
+    public mutating func retain(processIdentifiers: Set<Int32>) {
+        emptyWindowSignatures = emptyWindowSignatures.filter {
+            processIdentifiers.contains($0.key)
+        }
+    }
+}
+
+public enum WindowLiveRefresh {
+    public static let interval: TimeInterval = 0.5
 }
 
 public enum WindowActivationStep: Equatable, Sendable {
