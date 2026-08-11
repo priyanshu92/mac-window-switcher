@@ -8,10 +8,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let permissionsService = MacPermissionsService()
     private let windowService = MacWindowService()
     private let commandTabMonitor = CommandTabMonitor()
+    private let dockInteractionMonitor = DockInteractionMonitor()
 
     private var switcherController: SwitcherController!
     private var statusItemController: StatusItemController!
     private var preferencesController: PreferencesWindowController!
+    private var dockHoverTask: Task<Void, Never>?
+    private var dockDismissTask: Task<Void, Never>?
+    private var hoveredDockProcessIdentifier: pid_t?
+    private var pendingDockHoverProcessIdentifier: pid_t?
+    private var suppressDockHoverUntil = Date.distantPast
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         applyDevelopmentIcon()
@@ -44,8 +50,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.switcherController.handle(gesture)
             }
         }
+        dockInteractionMonitor.handler = { [weak self] event in
+            DispatchQueue.main.async {
+                self?.handleDockInteraction(event)
+            }
+        }
 
         startMonitorIfEnabled()
+        startDockMonitorIfEnabled()
 
         let permissions = permissionsService.snapshot()
         if ProcessInfo.processInfo.arguments.contains("--preview") {
@@ -84,6 +96,143 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             switcherLog(error.localizedDescription)
             presentError(error)
+        }
+    }
+
+    private func startDockMonitorIfEnabled() {
+        guard settingsStore.load().dockWindowPreviewsEnabled else {
+            dockInteractionMonitor.stop()
+            cancelDockHover()
+            switcherController.dismissDockPreview()
+            return
+        }
+
+        do {
+            try dockInteractionMonitor.start()
+        } catch {
+            switcherLog(error.localizedDescription)
+            presentError(error)
+        }
+    }
+
+    private func handleDockInteraction(_ event: DockInteractionEvent) {
+        guard settingsStore.load().dockWindowPreviewsEnabled else { return }
+
+        switch event {
+        case let .hover(target):
+            handleDockHover(target)
+        case let .click(target):
+            handleDockClick(target)
+        }
+    }
+
+    private func handleDockHover(_ target: DockApplicationTarget?) {
+        guard Date() >= suppressDockHoverUntil else { return }
+
+        guard
+            let target,
+            let application = runningApplication(for: target)
+        else {
+            hoveredDockProcessIdentifier = nil
+            cancelPendingDockHover()
+            scheduleDockDismissal()
+            return
+        }
+
+        let processIdentifier = application.processIdentifier
+        hoveredDockProcessIdentifier = processIdentifier
+        dockDismissTask?.cancel()
+        dockDismissTask = nil
+
+        if switcherController.isShowingDockWindows(processIdentifier: processIdentifier) {
+            cancelPendingDockHover()
+            return
+        }
+        guard pendingDockHoverProcessIdentifier != processIdentifier else { return }
+
+        cancelPendingDockHover()
+        pendingDockHoverProcessIdentifier = processIdentifier
+        dockHoverTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(
+                nanoseconds: UInt64(DockPreviewTiming.hoverIntentDelay * 1_000_000_000)
+            )
+            guard
+                !Task.isCancelled,
+                let self,
+                self.hoveredDockProcessIdentifier == processIdentifier
+            else {
+                return
+            }
+            self.pendingDockHoverProcessIdentifier = nil
+            self.dockHoverTask = nil
+            _ = self.switcherController.showDockWindows(processIdentifier: processIdentifier)
+        }
+    }
+
+    private func handleDockClick(_ target: DockApplicationTarget) {
+        suppressDockHoverUntil = Date().addingTimeInterval(0.7)
+        hoveredDockProcessIdentifier = nil
+        cancelDockHover()
+
+        guard let application = runningApplication(for: target) else {
+            reopenApplication(at: target.bundleURL)
+            return
+        }
+
+        switch switcherController.handleDockClick(
+            processIdentifier: application.processIdentifier
+        ) {
+        case .noWindows:
+            reopenApplication(at: target.bundleURL)
+        case .activatedWindow, .presentedWindows:
+            break
+        }
+    }
+
+    private func scheduleDockDismissal() {
+        guard dockDismissTask == nil else { return }
+
+        dockDismissTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.dockDismissTask = nil
+            if !self.switcherController.isPointerInsideDockPanel() {
+                self.switcherController.dismissDockPreview()
+            }
+        }
+    }
+
+    private func cancelPendingDockHover() {
+        dockHoverTask?.cancel()
+        dockHoverTask = nil
+        pendingDockHoverProcessIdentifier = nil
+    }
+
+    private func cancelDockHover() {
+        cancelPendingDockHover()
+        dockDismissTask?.cancel()
+        dockDismissTask = nil
+        hoveredDockProcessIdentifier = nil
+    }
+
+    private func runningApplication(
+        for target: DockApplicationTarget
+    ) -> NSRunningApplication? {
+        let targetURL = target.bundleURL.resolvingSymlinksInPath().standardizedFileURL
+        return NSWorkspace.shared.runningApplications.first {
+            $0.bundleURL?.resolvingSymlinksInPath().standardizedFileURL == targetURL
+        }
+    }
+
+    private func reopenApplication(at bundleURL: URL) {
+        let configuration = NSWorkspace.OpenConfiguration()
+        NSWorkspace.shared.openApplication(
+            at: bundleURL,
+            configuration: configuration
+        ) { _, error in
+            if let error {
+                switcherLog("Opening Dock application failed: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -154,6 +303,7 @@ extension AppDelegate: StatusItemControllerDelegate {
 extension AppDelegate: PreferencesWindowControllerDelegate {
     func preferencesDidChange(_ settings: SwitcherSettings) {
         startMonitorIfEnabled()
+        startDockMonitorIfEnabled()
         statusItemController.refresh()
     }
 

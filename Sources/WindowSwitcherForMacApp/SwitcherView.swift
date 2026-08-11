@@ -11,6 +11,8 @@ final class SwitcherViewModel: ObservableObject {
     @Published var columnCount = 1
     @Published var cardWidth: CGFloat = 252
     @Published var previewHeight: CGFloat = 142
+    @Published var isDockPreview = false
+    @Published var showsCloseButtons = false
 
     var selectedWindow: SwitchableWindow? {
         windows.indices.contains(selectedIndex) ? windows[selectedIndex] : nil
@@ -20,6 +22,8 @@ final class SwitcherViewModel: ObservableObject {
 struct SwitcherView: View {
     @ObservedObject var model: SwitcherViewModel
     let onSelect: (Int) -> Void
+    let onHover: (Int?) -> Void
+    let onClose: (Int) -> Void
 
     var body: some View {
         Group {
@@ -28,10 +32,13 @@ struct SwitcherView: View {
             } else {
                 LazyVGrid(
                     columns: Array(
-                        repeating: GridItem(.fixed(model.cardWidth), spacing: 12),
+                        repeating: GridItem(
+                            .fixed(model.cardWidth),
+                            spacing: model.isDockPreview ? 8 : 12
+                        ),
                         count: model.columnCount
                     ),
-                    spacing: 12
+                    spacing: model.isDockPreview ? 8 : 12
                 ) {
                     ForEach(Array(model.windows.enumerated()), id: \.element.id) { index, window in
                         WindowCard(
@@ -39,18 +46,28 @@ struct SwitcherView: View {
                             isSelected: index == model.selectedIndex,
                             cardWidth: model.cardWidth,
                             previewHeight: model.previewHeight,
-                            showWindowTitle: model.showWindowTitles
+                            showWindowTitle: model.showWindowTitles,
+                            isDockPreview: model.isDockPreview,
+                            showsCloseButton: model.showsCloseButtons,
+                            onHover: { hovering in
+                                onHover(hovering ? index : nil)
+                            },
+                            onClose: { onClose(index) }
                         )
                         .onTapGesture {
                             onSelect(index)
                         }
                     }
                 }
-                .padding(18)
+                .padding(model.isDockPreview ? 6 : 18)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(backdrop)
+        .background {
+            if !model.isDockPreview {
+                backdrop
+            }
+        }
     }
 
     private var emptyState: some View {
@@ -93,10 +110,36 @@ private struct WindowCard: View {
     let cardWidth: CGFloat
     let previewHeight: CGFloat
     let showWindowTitle: Bool
+    let isDockPreview: Bool
+    let showsCloseButton: Bool
+    let onHover: (Bool) -> Void
+    let onClose: () -> Void
+    @State private var isHovered = false
+
+    private var isHighlighted: Bool {
+        isSelected || isHovered
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 9) {
+                if showsCloseButton {
+                    Button(action: onClose) {
+                        ZStack {
+                            Circle()
+                                .fill(Color(nsColor: .systemRed))
+                            if isHovered {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 7, weight: .bold))
+                                    .foregroundStyle(.black.opacity(0.58))
+                            }
+                        }
+                        .frame(width: 14, height: 14)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close \(window.windowTitle)")
+                }
+
                 Image(nsImage: window.appIcon)
                     .resizable()
                     .scaledToFit()
@@ -105,7 +148,9 @@ private struct WindowCard: View {
                 if showWindowTitle {
                     Text(window.windowTitle)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.92))
+                        .foregroundStyle(
+                            isDockPreview ? Color.primary : .white.opacity(0.92)
+                        )
                         .lineLimit(1)
                 }
 
@@ -113,6 +158,11 @@ private struct WindowCard: View {
             }
             .padding(.horizontal, 12)
             .frame(height: 44)
+            .background {
+                if isDockPreview {
+                    Color(nsColor: .windowBackgroundColor)
+                }
+            }
 
             preview
                 .frame(width: cardWidth, height: previewHeight)
@@ -129,18 +179,32 @@ private struct WindowCard: View {
                 }
         }
             .frame(width: cardWidth, height: previewHeight + 44)
-            .background(.black.opacity(0.28))
+                .background(
+                    isDockPreview
+                        ? Color(nsColor: .windowBackgroundColor)
+                        : .black.opacity(0.28)
+                )
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(
-                    isSelected
+                    isHighlighted
                         ? Color(nsColor: .controlAccentColor)
                         : .white.opacity(0.12),
-                    lineWidth: isSelected ? 4 : 1
+                    lineWidth: isHighlighted ? 4 : 1
                 )
             }
-            .shadow(color: .black.opacity(isSelected ? 0.35 : 0.18), radius: 12, y: 7)
+            .shadow(
+                color: isDockPreview
+                    ? .clear
+                    : .black.opacity(isHighlighted ? 0.35 : 0.18),
+                radius: isDockPreview ? 0 : 12,
+                y: isDockPreview ? 0 : 7
+            )
+            .onHover {
+                isHovered = $0
+                onHover($0)
+            }
             .accessibilityLabel("\(window.appName), \(window.windowTitle)")
     }
 

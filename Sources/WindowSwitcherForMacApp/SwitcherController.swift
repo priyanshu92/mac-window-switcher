@@ -3,6 +3,12 @@ import AppKit
 import PlatformServices
 import SwiftUI
 
+enum DockClickResult {
+    case noWindows
+    case activatedWindow
+    case presentedWindows
+}
+
 @MainActor
 final class SwitcherController {
     private static let cardSpacing: CGFloat = 12
@@ -19,6 +25,13 @@ final class SwitcherController {
     private var lastObservedActiveWindowIdentifier: String?
     private var sessionScreen: NSScreen?
     private var sessionOriginWindowIdentifier: String?
+    private var dockProcessIdentifier: pid_t?
+    private var dockAnchorPoint: NSPoint?
+    private var dockOriginActivationTarget: WindowActivationTarget?
+    private var dockHoveredWindowIdentifier: String?
+    private var dockRestoreTask: Task<Void, Never>?
+    private var suppressedDockWindowIdentifiers: Set<String> = []
+    private var cachedGlobalWindows: [SwitchableWindow] = []
     private var windowSwitchRecency = WindowSwitchRecency()
 
     init(windowService: MacWindowService, settingsStore: SwitcherSettingsStore) {
@@ -38,9 +51,18 @@ final class SwitcherController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.hidesOnDeactivate = false
 
-        let view = SwitcherView(model: viewModel) { [weak self] index in
-            self?.selectAndCommit(index)
-        }
+        let view = SwitcherView(
+            model: viewModel,
+            onSelect: { [weak self] index in
+                self?.selectAndCommit(index)
+            },
+            onHover: { [weak self] index in
+                self?.previewDockWindow(at: index)
+            },
+            onClose: { [weak self] index in
+                self?.closeDockWindow(at: index)
+            }
+        )
         hostingController = NSHostingController(rootView: view)
         hostingController.view.wantsLayer = true
         hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
@@ -98,17 +120,101 @@ final class SwitcherController {
         showPanel()
     }
 
+    func showDockWindows(processIdentifier: pid_t) -> Bool {
+        prepareDockSession(processIdentifier: processIdentifier)
+        loadWindows(preservingSelection: false)
+        guard !viewModel.windows.isEmpty else {
+            cancel()
+            return false
+        }
+
+        viewModel.selectedIndex = -1
+        showPanel()
+        return true
+    }
+
+    func handleDockClick(processIdentifier: pid_t) -> DockClickResult {
+        prepareDockSession(processIdentifier: processIdentifier)
+        loadWindows(preservingSelection: false)
+
+        switch viewModel.windows.count {
+        case 0:
+            cancel()
+            return .noWindows
+        case 1:
+            let window = viewModel.windows[0]
+            windowSwitchRecency.recordSelection(window.id)
+            clearSession(restoringDockOrigin: false)
+            windowService.activate(window)
+            return .activatedWindow
+        default:
+            viewModel.selectedIndex = -1
+            showPanel()
+            return .presentedWindows
+        }
+    }
+
+    func dismissDockPreview() {
+        guard dockProcessIdentifier != nil else { return }
+        cancel()
+    }
+
+    func isShowingDockWindows(processIdentifier: pid_t) -> Bool {
+        panel.isVisible && dockProcessIdentifier == processIdentifier
+    }
+
+    func isPointerInsideDockPanel() -> Bool {
+        guard panel.isVisible, dockProcessIdentifier != nil else { return false }
+        return panel.frame.insetBy(dx: -8, dy: -8).contains(NSEvent.mouseLocation)
+    }
+
     func cancel() {
+        clearSession(restoringDockOrigin: dockProcessIdentifier != nil)
+    }
+
+    private func clearSession(restoringDockOrigin: Bool) {
+        dockRestoreTask?.cancel()
+        dockRestoreTask = nil
+        let activationTarget = restoringDockOrigin ? dockOriginActivationTarget : nil
         stopLiveUpdates()
         panel.orderOut(nil)
         viewModel.windows = []
         sessionScreen = nil
         sessionOriginWindowIdentifier = nil
+        dockProcessIdentifier = nil
+        dockAnchorPoint = nil
+        dockOriginActivationTarget = nil
+        dockHoveredWindowIdentifier = nil
+        suppressedDockWindowIdentifiers.removeAll()
+        viewModel.isDockPreview = false
+        viewModel.showsCloseButtons = false
+        hostingController.view.layer?.masksToBounds = true
+        panel.hasShadow = true
+        if let activationTarget {
+            windowService.activate(activationTarget)
+        }
     }
 
     private func cycle(by offset: Int) {
+        if dockProcessIdentifier != nil {
+            cancel()
+        }
+
         if !panel.isVisible {
             prepareSession()
+            if !cachedGlobalWindows.isEmpty {
+                applyGlobalWindows(
+                    cachedGlobalWindows,
+                    selectedIdentifier: nil
+                )
+                sessionOriginWindowIdentifier = viewModel.windows.first?.id
+                viewModel.selectedIndex = InitialWindowSelection.index(
+                    windowCount: viewModel.windows.count,
+                    movingForward: offset > 0
+                )
+                showPanel()
+                return
+            }
             loadWindows(preservingSelection: false)
             guard !viewModel.windows.isEmpty else {
                 showPanel()
@@ -135,15 +241,80 @@ final class SwitcherController {
         let settings = settingsStore.load()
         viewModel.showWindowTitles = settings.showWindowTitles
         let discoveredWindows = windowService.discoverWindows(
-            includeMinimized: settings.includeMinimizedWindows
+            includeMinimized: settings.includeMinimizedWindows,
+            processIdentifier: dockProcessIdentifier,
+            refreshPreviews: panel.isVisible || dockProcessIdentifier != nil,
+            previewRefreshLimit:
+                panel.isVisible && dockProcessIdentifier == nil ? 4 : nil
         )
+        if dockProcessIdentifier != nil {
+            let discoveredIdentifiers = discoveredWindows.map(\.id)
+            suppressedDockWindowIdentifiers = suppressedDockWindowIdentifiers.filter {
+                discoveredIdentifiers.contains($0)
+            }
+            let availableWindows = discoveredWindows.filter {
+                !suppressedDockWindowIdentifiers.contains($0.id)
+            }
+            let windowsByIdentifier = Dictionary(
+                uniqueKeysWithValues: availableWindows.map { ($0.id, $0) }
+            )
+            let discoveryRanks = Dictionary(
+                uniqueKeysWithValues: availableWindows.enumerated().map {
+                    ($0.element.id, $0.offset)
+                }
+            )
+            let creationOrderedIdentifiers = availableWindows.sorted { lhs, rhs in
+                switch (lhs.windowIdentifier, rhs.windowIdentifier) {
+                case let (lhsIdentifier?, rhsIdentifier?)
+                    where lhsIdentifier != rhsIdentifier:
+                    return lhsIdentifier < rhsIdentifier
+                default:
+                    return discoveryRanks[lhs.id, default: Int.max]
+                        < discoveryRanks[rhs.id, default: Int.max]
+                }
+            }.map(\.id)
+            let orderedIdentifiers = DockPreviewOrdering.identifiers(
+                discoveredIdentifiers: availableWindows.map(\.id),
+                previouslyDisplayedIdentifiers: viewModel.windows.map(\.id),
+                creationOrderedIdentifiers: creationOrderedIdentifiers
+            )
+            viewModel.windows = orderedIdentifiers.compactMap {
+                windowsByIdentifier[$0]
+            }
+            updateSelection(selectedIdentifier: selectedIdentifier)
+            if panel.isVisible {
+                sizeAndPositionPanel()
+            }
+            return
+        }
+
+        cachedGlobalWindows = discoveredWindows
+        applyGlobalWindows(
+            discoveredWindows,
+            selectedIdentifier: selectedIdentifier
+        )
+
+        if panel.isVisible {
+            sizeAndPositionPanel()
+        }
+    }
+
+    private func applyGlobalWindows(
+        _ discoveredWindows: [SwitchableWindow],
+        selectedIdentifier: String?
+    ) {
         let windowsByIdentifier = Dictionary(
             uniqueKeysWithValues: discoveredWindows.map { ($0.id, $0) }
         )
         let discoveredIdentifiers = discoveredWindows.map(\.id)
-        let currentIdentifier = panel.isVisible
-            ? sessionOriginWindowIdentifier
-            : windowService.focusedWindowIdentifier(in: discoveredWindows)
+        let currentIdentifier: String?
+        if dockProcessIdentifier != nil {
+            currentIdentifier = nil
+        } else {
+            currentIdentifier = panel.isVisible
+                ? sessionOriginWindowIdentifier
+                : windowService.focusedWindowIdentifier(in: discoveredWindows)
+        }
         let orderedIdentifiers = windowSwitchRecency.reconcile(
             discoveredWindowIdentifiers: discoveredIdentifiers,
             currentWindowIdentifier: currentIdentifier,
@@ -151,8 +322,13 @@ final class SwitcherController {
                 discoveredWindows.lazy.filter(\.isMinimized).map(\.id)
             )
         )
-        viewModel.windows = orderedIdentifiers.compactMap { windowsByIdentifier[$0] }
+        viewModel.windows = orderedIdentifiers
+            .compactMap { windowsByIdentifier[$0] }
 
+        updateSelection(selectedIdentifier: selectedIdentifier)
+    }
+
+    private func updateSelection(selectedIdentifier: String?) {
         if
             let selectedIdentifier,
             let updatedIndex = viewModel.windows.firstIndex(where: { $0.id == selectedIdentifier })
@@ -164,10 +340,6 @@ final class SwitcherController {
                 max(viewModel.windows.count - 1, 0)
             )
         }
-
-        if panel.isVisible {
-            sizeAndPositionPanel()
-        }
     }
 
     private func showPanel() {
@@ -176,14 +348,18 @@ final class SwitcherController {
         startLiveUpdates()
     }
 
-    private func sizeAndPositionPanel() {
+    private func sizeAndPositionPanel(animated: Bool = false) {
         let screen = sessionScreen ?? screenContainingPointer()
         guard let visibleFrame = screen?.visibleFrame else { return }
 
+        let panelPadding = dockProcessIdentifier == nil ? Self.panelPadding : 6
+        let cardSpacing = dockProcessIdentifier == nil ? Self.cardSpacing : 8
         let availableWidth = max(1, visibleFrame.width - 64)
         let availableHeight = max(1, visibleFrame.height - 64)
         let screenAspectRatio = displayAspectRatio(for: screen) ?? (16.0 / 9.0)
-        var cardWidth = min(300, max(210, visibleFrame.width / 5.5))
+        var cardWidth = dockProcessIdentifier == nil
+            ? min(300, max(210, visibleFrame.width / 5.5))
+            : min(260, max(190, visibleFrame.width / 6.5))
         var previewHeight = cardWidth / screenAspectRatio
         var columnCount = 1
         var rowCount = 1
@@ -193,8 +369,8 @@ final class SwitcherController {
             let maximumColumns = max(
                 1,
                 Int(
-                    (availableWidth - Self.panelPadding * 2 + Self.cardSpacing)
-                        / (cardWidth + Self.cardSpacing)
+                    (availableWidth - panelPadding * 2 + cardSpacing)
+                        / (cardWidth + cardSpacing)
                 )
             )
             columnCount = min(maximumColumns, max(viewModel.windows.count, 1))
@@ -203,9 +379,9 @@ final class SwitcherController {
             )
             previewHeight = cardWidth / screenAspectRatio
             let cardHeight = Self.captionHeight + previewHeight
-            panelHeight = Self.panelPadding * 2
+            panelHeight = panelPadding * 2
                 + CGFloat(rowCount) * cardHeight
-                + CGFloat(max(rowCount - 1, 0)) * Self.cardSpacing
+                + CGFloat(max(rowCount - 1, 0)) * cardSpacing
             if panelHeight <= availableHeight || cardWidth <= 150 {
                 break
             }
@@ -216,16 +392,36 @@ final class SwitcherController {
         viewModel.cardWidth = cardWidth
         viewModel.previewHeight = previewHeight
 
-        let width = Self.panelPadding * 2
+        let width = panelPadding * 2
             + CGFloat(columnCount) * cardWidth
-            + CGFloat(max(columnCount - 1, 0)) * Self.cardSpacing
-        panel.setContentSize(NSSize(width: width, height: panelHeight))
-
-        let origin = NSPoint(
-            x: visibleFrame.midX - width / 2,
-            y: visibleFrame.midY - panelHeight / 2
+            + CGFloat(max(columnCount - 1, 0)) * cardSpacing
+        let origin: NSPoint
+        if let dockAnchorPoint {
+            origin = dockPanelOrigin(
+                panelSize: NSSize(width: width, height: panelHeight),
+                anchorPoint: dockAnchorPoint,
+                screenFrame: screen?.frame ?? visibleFrame,
+                visibleFrame: visibleFrame
+            )
+        } else {
+            origin = NSPoint(
+                x: visibleFrame.midX - width / 2,
+                y: visibleFrame.midY - panelHeight / 2
+            )
+        }
+        let frame = NSRect(
+            origin: origin,
+            size: NSSize(width: width, height: panelHeight)
         )
-        panel.setFrameOrigin(origin)
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.16
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                panel.animator().setFrame(frame, display: true)
+            }
+        } else {
+            panel.setFrame(frame, display: true)
+        }
     }
 
     private func commit() {
@@ -234,13 +430,9 @@ final class SwitcherController {
             return
         }
 
-        stopLiveUpdates()
-        panel.orderOut(nil)
         windowSwitchRecency.recordSelection(selected.id)
+        clearSession(restoringDockOrigin: false)
         windowService.activate(selected)
-        viewModel.windows = []
-        sessionScreen = nil
-        sessionOriginWindowIdentifier = nil
     }
 
     private func selectAndCommit(_ index: Int) {
@@ -274,6 +466,150 @@ final class SwitcherController {
 
     private func prepareSession() {
         sessionScreen = screenContainingPointer()
+        dockProcessIdentifier = nil
+        dockAnchorPoint = nil
+        dockOriginActivationTarget = nil
+        viewModel.isDockPreview = false
+        viewModel.showsCloseButtons = false
+        hostingController.view.layer?.masksToBounds = true
+        panel.hasShadow = true
+        suppressedDockWindowIdentifiers.removeAll()
+    }
+
+    private func prepareDockSession(processIdentifier: pid_t) {
+        if
+            let dockProcessIdentifier,
+            dockProcessIdentifier != processIdentifier
+        {
+            suppressedDockWindowIdentifiers.removeAll()
+        }
+        if dockOriginActivationTarget == nil {
+            dockOriginActivationTarget = windowService.activeWindowTarget()
+        }
+        sessionScreen = screenContainingPointer()
+        sessionOriginWindowIdentifier = nil
+        dockProcessIdentifier = processIdentifier
+        dockAnchorPoint = NSEvent.mouseLocation
+        viewModel.isDockPreview = true
+        viewModel.showsCloseButtons = true
+        hostingController.view.layer?.masksToBounds = false
+        panel.hasShadow = false
+    }
+
+    private func previewDockWindow(at index: Int?) {
+        guard dockProcessIdentifier != nil, panel.isVisible else { return }
+
+        dockRestoreTask?.cancel()
+        dockRestoreTask = nil
+
+        guard let index, viewModel.windows.indices.contains(index) else {
+            dockHoveredWindowIdentifier = nil
+            dockRestoreTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                guard
+                    !Task.isCancelled,
+                    let self,
+                    self.dockHoveredWindowIdentifier == nil,
+                    let activationTarget = self.dockOriginActivationTarget
+                else {
+                    return
+                }
+                self.windowService.activate(activationTarget)
+                self.dockRestoreTask = nil
+            }
+            return
+        }
+
+        let window = viewModel.windows[index]
+        guard dockHoveredWindowIdentifier != window.id else { return }
+        dockHoveredWindowIdentifier = window.id
+        windowService.activate(window)
+    }
+
+    private func closeDockWindow(at index: Int) {
+        guard
+            dockProcessIdentifier != nil,
+            viewModel.windows.indices.contains(index)
+        else {
+            return
+        }
+
+        let window = viewModel.windows[index]
+        suppressedDockWindowIdentifiers.insert(window.id)
+        if dockHoveredWindowIdentifier == window.id {
+            dockHoveredWindowIdentifier = nil
+        }
+        stopLiveUpdates()
+        _ = withAnimation(.easeOut(duration: 0.14)) {
+            viewModel.windows.remove(at: index)
+        }
+        if !viewModel.windows.isEmpty {
+            sizeAndPositionPanel(animated: true)
+        }
+        windowService.close(window)
+        previewDockWindow(at: nil)
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard let self, self.dockProcessIdentifier != nil else { return }
+            self.loadWindows(preservingSelection: false)
+            if self.viewModel.windows.isEmpty {
+                self.cancel()
+            } else {
+                self.startLiveUpdates()
+            }
+        }
+    }
+
+    private func dockPanelOrigin(
+        panelSize: NSSize,
+        anchorPoint: NSPoint,
+        screenFrame: NSRect,
+        visibleFrame: NSRect
+    ) -> NSPoint {
+        let margin: CGFloat = 12
+        let bottomInset = visibleFrame.minY - screenFrame.minY
+        let leftInset = visibleFrame.minX - screenFrame.minX
+        let rightInset = screenFrame.maxX - visibleFrame.maxX
+        let largestInset = max(bottomInset, leftInset, rightInset)
+        let dockIsOnLeft = largestInset > 1
+            ? leftInset == largestInset
+            : anchorPoint.x - screenFrame.minX < anchorPoint.y - screenFrame.minY
+                && anchorPoint.x - screenFrame.minX < screenFrame.maxX - anchorPoint.x
+        let dockIsOnRight = largestInset > 1
+            ? rightInset == largestInset
+            : screenFrame.maxX - anchorPoint.x < anchorPoint.y - screenFrame.minY
+                && screenFrame.maxX - anchorPoint.x < anchorPoint.x - screenFrame.minX
+
+        // Auto-hidden Docks do not reserve space in visibleFrame, so fall back
+        // to the screen edge nearest the Dock icon under the pointer.
+        if dockIsOnLeft {
+            return NSPoint(
+                x: visibleFrame.minX + margin,
+                y: min(
+                    max(anchorPoint.y - panelSize.height / 2, visibleFrame.minY),
+                    visibleFrame.maxY - panelSize.height
+                )
+            )
+        }
+
+        if dockIsOnRight {
+            return NSPoint(
+                x: visibleFrame.maxX - panelSize.width - margin,
+                y: min(
+                    max(anchorPoint.y - panelSize.height / 2, visibleFrame.minY),
+                    visibleFrame.maxY - panelSize.height
+                )
+            )
+        }
+
+        return NSPoint(
+            x: min(
+                max(anchorPoint.x - panelSize.width / 2, visibleFrame.minX),
+                visibleFrame.maxX - panelSize.width
+            ),
+            y: visibleFrame.minY + margin
+        )
     }
 
     private func screenContainingPointer() -> NSScreen? {

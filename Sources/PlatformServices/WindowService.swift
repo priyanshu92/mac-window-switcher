@@ -5,6 +5,23 @@ import CoreGraphics
 import Foundation
 
 @MainActor
+public final class WindowActivationTarget {
+    fileprivate let processIdentifier: pid_t
+    fileprivate let windowIdentifier: CGWindowID?
+    fileprivate let accessibilityElement: AXUIElement?
+
+    fileprivate init(
+        processIdentifier: pid_t,
+        windowIdentifier: CGWindowID?,
+        accessibilityElement: AXUIElement?
+    ) {
+        self.processIdentifier = processIdentifier
+        self.windowIdentifier = windowIdentifier
+        self.accessibilityElement = accessibilityElement
+    }
+}
+
+@MainActor
 public final class SwitchableWindow: Identifiable {
     public let id: String
     public let processIdentifier: pid_t
@@ -63,8 +80,36 @@ public final class MacWindowService {
 
     private var previewCache: [CGWindowID: NSImage] = [:]
     private var accessoryWindowScanCache = AccessoryWindowScanCache()
+    private var previewRefreshCursor = 0
 
     public init() {}
+
+    public func activeWindowTarget() -> WindowActivationTarget? {
+        guard
+            let application = NSWorkspace.shared.frontmostApplication,
+            application.processIdentifier != ProcessInfo.processInfo.processIdentifier
+        else {
+            return nil
+        }
+
+        let applicationElement = AXUIElementCreateApplication(application.processIdentifier)
+        let focusedWindow = copyAttribute(
+            applicationElement,
+            attribute: kAXFocusedWindowAttribute as CFString,
+            as: AXUIElement.self
+        )
+        let windowIdentifier = focusedWindow.flatMap {
+            AccessibilityWindowResolver.identifier(of: $0)
+        } ?? coreGraphicsWindowRecords().first {
+            $0.processIdentifier == application.processIdentifier
+        }?.identifier
+
+        return WindowActivationTarget(
+            processIdentifier: application.processIdentifier,
+            windowIdentifier: windowIdentifier,
+            accessibilityElement: focusedWindow
+        )
+    }
 
     public func activeWindowIdentifier() -> String? {
         guard
@@ -176,10 +221,24 @@ public final class MacWindowService {
         )
     }
 
-    public func discoverWindows(includeMinimized: Bool) -> [SwitchableWindow] {
-        let records = coreGraphicsWindowRecords()
+    public func discoverWindows(
+        includeMinimized: Bool,
+        processIdentifier: pid_t? = nil,
+        refreshPreviews: Bool = true,
+        previewRefreshLimit: Int? = nil
+    ) -> [SwitchableWindow] {
+        let records = coreGraphicsWindowRecords().filter {
+            processIdentifier == nil || $0.processIdentifier == processIdentifier
+        }
+        let previewRefreshIdentifiers = identifiersToRefresh(
+            records: records,
+            refreshPreviews: refreshPreviews,
+            limit: previewRefreshLimit
+        )
         let currentIdentifiers = Set(records.map(\.identifier))
-        previewCache = previewCache.filter { currentIdentifiers.contains($0.key) }
+        if processIdentifier == nil {
+            previewCache = previewCache.filter { currentIdentifiers.contains($0.key) }
+        }
         let recordsByIdentifier = Dictionary(uniqueKeysWithValues: records.map { ($0.identifier, $0) })
         let frontToBackOrder = Dictionary(uniqueKeysWithValues: records.map { ($0.identifier, $0.order) })
         let recordOwnerProcessIdentifiers = Set(records.map(\.processIdentifier))
@@ -192,10 +251,14 @@ public final class MacWindowService {
         var windows: [SwitchableWindow] = []
         var seenWindowIdentifiers: Set<CGWindowID> = []
 
-        for app in NSWorkspace.shared.runningApplications where isEligible(
-            app,
-            ownsWindowServerRecord: recordOwnerProcessIdentifiers.contains(app.processIdentifier)
-        ) {
+        for app in NSWorkspace.shared.runningApplications where
+            (processIdentifier == nil || app.processIdentifier == processIdentifier)
+                && isEligible(
+                    app,
+                    ownsWindowServerRecord:
+                        recordOwnerProcessIdentifiers.contains(app.processIdentifier)
+                )
+        {
             let isAccessory = app.activationPolicy == .accessory
             let appRecordIdentifiers = recordIdentifiersByProcess[app.processIdentifier] ?? []
             if
@@ -278,7 +341,13 @@ public final class MacWindowService {
                         appName: appName,
                         appIcon: app.icon ?? fallbackAppIcon(),
                         windowTitle: title.isEmpty ? matchedRecord?.title ?? "" : title,
-                        preview: identifier.flatMap(makePreview),
+                        preview: identifier.flatMap {
+                            makePreview(
+                                $0,
+                                bestResolution: processIdentifier == nil,
+                                refresh: previewRefreshIdentifiers.contains($0)
+                            )
+                        },
                         isMinimized: minimized,
                         bounds: matchedRecord?.bounds ?? accessibilityBounds,
                         accessibilityElement: element
@@ -314,7 +383,11 @@ public final class MacWindowService {
                     appName: appName,
                     appIcon: app.icon ?? fallbackAppIcon(),
                     windowTitle: record.title,
-                    preview: makePreview(record.identifier),
+                    preview: makePreview(
+                        record.identifier,
+                        bestResolution: processIdentifier == nil,
+                        refresh: previewRefreshIdentifiers.contains(record.identifier)
+                    ),
                     isMinimized: false,
                     bounds: record.bounds,
                     accessibilityElement: nil
@@ -325,7 +398,7 @@ public final class MacWindowService {
         let screenCaptureGranted = CGPreflightScreenCaptureAccess()
         return windows
             .filter {
-                WindowPresentationFilter.shouldInclude(
+                !refreshPreviews || WindowPresentationFilter.shouldInclude(
                     hasPreview: $0.preview != nil,
                     screenCaptureGranted: screenCaptureGranted
                 )
@@ -378,8 +451,70 @@ public final class MacWindowService {
         application.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
     }
 
+    public func activate(_ target: WindowActivationTarget) {
+        guard
+            let application = NSRunningApplication(
+                processIdentifier: target.processIdentifier
+            )
+        else {
+            return
+        }
+
+        application.unhide()
+        if
+            let windowIdentifier = target.windowIdentifier,
+            WindowServerFocus.focus(
+                processIdentifier: target.processIdentifier,
+                windowIdentifier: windowIdentifier
+            )
+        {
+            application.activate(options: [.activateIgnoringOtherApps])
+            if let accessibilityElement = target.accessibilityElement {
+                AXUIElementPerformAction(
+                    accessibilityElement,
+                    kAXRaiseAction as CFString
+                )
+            }
+            return
+        }
+
+        if let accessibilityElement = target.accessibilityElement {
+            AXUIElementSetAttributeValue(
+                applicationElement(for: target.processIdentifier),
+                kAXFocusedWindowAttribute as CFString,
+                accessibilityElement
+            )
+            AXUIElementPerformAction(
+                accessibilityElement,
+                kAXRaiseAction as CFString
+            )
+        }
+        application.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+    }
+
     public func quitApplication(owning window: SwitchableWindow) {
         NSRunningApplication(processIdentifier: window.processIdentifier)?.terminate()
+    }
+
+    public func close(_ window: SwitchableWindow) {
+        let element = window.accessibilityElement
+            ?? window.windowIdentifier.flatMap {
+                AccessibilityWindowResolver.resolve(
+                    processIdentifier: window.processIdentifier,
+                    windowIdentifier: $0
+                )
+            }
+        guard
+            let element,
+            let closeButton = copyAttribute(
+                element,
+                attribute: kAXCloseButtonAttribute as CFString,
+                as: AXUIElement.self
+            )
+        else {
+            return
+        }
+        AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
     }
 
     private func focusAndRaise(_ window: SwitchableWindow) {
@@ -413,6 +548,10 @@ public final class MacWindowService {
     private func raise(_ window: SwitchableWindow) {
         guard let element = window.accessibilityElement else { return }
         AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+    }
+
+    private func applicationElement(for processIdentifier: pid_t) -> AXUIElement {
+        AXUIElementCreateApplication(processIdentifier)
     }
 
     private func isEligible(
@@ -478,16 +617,26 @@ public final class MacWindowService {
         }
     }
 
-    private func makePreview(_ identifier: CGWindowID) -> NSImage? {
+    private func makePreview(
+        _ identifier: CGWindowID,
+        bestResolution: Bool,
+        refresh: Bool
+    ) -> NSImage? {
         guard CGPreflightScreenCaptureAccess() else {
             return nil
         }
+        if !refresh {
+            return previewCache[identifier]
+        }
 
+        let imageOptions: CGWindowImageOption = bestResolution
+            ? [.boundsIgnoreFraming, .bestResolution]
+            : [.boundsIgnoreFraming, .nominalResolution]
         guard let image = CGWindowListCreateImage(
             .null,
             .optionIncludingWindow,
             identifier,
-            [.boundsIgnoreFraming, .bestResolution]
+            imageOptions
         ) else {
             return previewCache[identifier]
         }
@@ -497,6 +646,35 @@ public final class MacWindowService {
         )
         previewCache[identifier] = preview
         return preview
+    }
+
+    private func identifiersToRefresh(
+        records: [CGWindowRecord],
+        refreshPreviews: Bool,
+        limit: Int?
+    ) -> Set<CGWindowID> {
+        guard refreshPreviews else { return [] }
+        guard let limit, records.count > limit else {
+            return Set(records.map(\.identifier))
+        }
+
+        let uncachedIdentifiers = records.lazy
+            .map(\.identifier)
+            .filter { self.previewCache[$0] == nil }
+        var identifiers = Array(uncachedIdentifiers.prefix(limit))
+        if identifiers.count < limit, !records.isEmpty {
+            let remainingCount = limit - identifiers.count
+            for offset in 0..<remainingCount {
+                let index = (previewRefreshCursor + offset) % records.count
+                let identifier = records[index].identifier
+                if !identifiers.contains(identifier) {
+                    identifiers.append(identifier)
+                }
+            }
+            previewRefreshCursor =
+                (previewRefreshCursor + remainingCount) % records.count
+        }
+        return Set(identifiers)
     }
 
     private func isStandardWindow(_ element: AXUIElement) -> Bool {

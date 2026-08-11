@@ -35,6 +35,11 @@ final class PreferencesWindowController: NSWindowController {
     private weak var delegate: PreferencesWindowControllerDelegate?
 
     private let enabledCheckbox = NSButton(checkboxWithTitle: "Replace Command-Tab", target: nil, action: nil)
+    private let dockPreviewsCheckbox = NSButton(
+        checkboxWithTitle: "Show window previews from Dock app icons",
+        target: nil,
+        action: nil
+    )
     private let minimizedCheckbox = NSButton(checkboxWithTitle: "Include minimized windows", target: nil, action: nil)
     private let titlesCheckbox = NSButton(checkboxWithTitle: "Show window titles", target: nil, action: nil)
     private let accessibilityStatus = NSTextField(labelWithString: "")
@@ -78,6 +83,7 @@ final class PreferencesWindowController: NSWindowController {
     func refresh() {
         let settings = settingsStore.load()
         enabledCheckbox.state = settings.isEnabled ? .on : .off
+        dockPreviewsCheckbox.state = settings.dockWindowPreviewsEnabled ? .on : .off
         minimizedCheckbox.state = settings.includeMinimizedWindows ? .on : .off
         titlesCheckbox.state = settings.showWindowTitles ? .on : .off
 
@@ -97,12 +103,14 @@ final class PreferencesWindowController: NSWindowController {
         subtitle.font = .systemFont(ofSize: 13)
         subtitle.textColor = .secondaryLabelColor
 
-        [enabledCheckbox, minimizedCheckbox, titlesCheckbox].forEach {
+        [enabledCheckbox, dockPreviewsCheckbox, minimizedCheckbox, titlesCheckbox].forEach {
             $0.target = self
             $0.action = #selector(saveSettings)
         }
 
-        let behaviorStack = NSStackView(views: [enabledCheckbox, minimizedCheckbox, titlesCheckbox])
+        let behaviorStack = NSStackView(
+            views: [enabledCheckbox, dockPreviewsCheckbox, minimizedCheckbox, titlesCheckbox]
+        )
         behaviorStack.orientation = .vertical
         behaviorStack.alignment = .leading
         behaviorStack.addArrangedSubview(
@@ -215,7 +223,8 @@ final class PreferencesWindowController: NSWindowController {
         let settings = SwitcherSettings(
             isEnabled: enabledCheckbox.state == .on,
             includeMinimizedWindows: minimizedCheckbox.state == .on,
-            showWindowTitles: titlesCheckbox.state == .on
+            showWindowTitles: titlesCheckbox.state == .on,
+            dockWindowPreviewsEnabled: dockPreviewsCheckbox.state == .on
         )
         do {
             try settingsStore.save(settings)

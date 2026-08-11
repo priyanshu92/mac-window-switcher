@@ -19,6 +19,8 @@ enum ValidationRunner {
         validateWindowApplicationEligibility()
         validateAccessoryWindowScanCache()
         validateLiveRefreshCadence()
+        validateDockPreviewCadence()
+        validateDockPreviewOrdering()
         validateFullScreenActivationPlan()
         print("All validations passed.")
     }
@@ -28,6 +30,7 @@ enum ValidationRunner {
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             fatalError("Could not create isolated UserDefaults suite")
         }
+
         defer {
             defaults.removePersistentDomain(forName: suiteName)
         }
@@ -35,13 +38,68 @@ enum ValidationRunner {
         let store = UserDefaultsSwitcherSettingsStore(defaults: defaults)
         expect(store.load() == .default, "New settings store should return defaults")
 
+        defaults.set(
+            Data(
+                """
+                {
+                  "isEnabled": false,
+                  "includeMinimizedWindows": true,
+                  "showWindowTitles": false
+                }
+                """.utf8
+            ),
+            forKey: "switcherSettings"
+        )
+        let migrated = store.load()
+        expect(!migrated.isEnabled, "Existing enabled preference should survive migration")
+        expect(
+            !migrated.dockWindowPreviewsEnabled,
+            "Dock previews should remain disabled when loading older settings"
+        )
+
         let updated = SwitcherSettings(
             isEnabled: false,
             includeMinimizedWindows: false,
-            showWindowTitles: false
+            showWindowTitles: false,
+            dockWindowPreviewsEnabled: true
         )
         try store.save(updated)
         expect(store.load() == updated, "Settings should survive a store round trip")
+    }
+
+    private static func validateDockPreviewCadence() {
+        expect(
+            DockPreviewTiming.hoverDetectionDebounce + DockPreviewTiming.hoverIntentDelay
+                <= DockPreviewTiming.maximumSnappyIntentLatency,
+            "Dock hover intent should be recognized within 200 ms"
+        )
+    }
+
+    private static func validateDockPreviewOrdering() {
+        expect(
+            DockPreviewOrdering.identifiers(
+                discoveredIdentifiers: ["new", "first", "second"],
+                previouslyDisplayedIdentifiers: ["first", "second"],
+                creationOrderedIdentifiers: ["first", "second", "new"]
+            ) == ["first", "second", "new"],
+            "New Dock windows should be appended on the right"
+        )
+        expect(
+            DockPreviewOrdering.identifiers(
+                discoveredIdentifiers: ["second", "first"],
+                previouslyDisplayedIdentifiers: [],
+                creationOrderedIdentifiers: ["first", "second"]
+            ) == ["first", "second"],
+            "Initial Dock windows should follow creation order"
+        )
+        expect(
+            DockPreviewOrdering.identifiers(
+                discoveredIdentifiers: ["second", "first"],
+                previouslyDisplayedIdentifiers: ["first", "second"],
+                creationOrderedIdentifiers: ["second", "first"]
+            ) == ["first", "second"],
+            "Dock ordering should not change while the picker is open"
+        )
     }
 
     private static func validateWindowDisplayTitles() {

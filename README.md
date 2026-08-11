@@ -16,6 +16,7 @@ A dead-simple window switcher for macOS that brings the Windows-style Alt-Tab ex
 - Size previews to the display containing the current window and crop them edge to edge.
 - Include minimized windows and restore them when selected.
 - Press `Q` while holding `Command` to quit the selected app.
+- Optionally hover over a running app in the Dock to see its open windows. Clicking the app opens its only window or lets you pick when several are open.
 - Use the menu bar icon to preview the switcher, change behavior, manage permissions, or launch at login.
 
 ## Requirements

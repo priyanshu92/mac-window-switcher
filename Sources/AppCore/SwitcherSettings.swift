@@ -4,22 +4,42 @@ public struct SwitcherSettings: Codable, Equatable, Sendable {
     public var isEnabled: Bool
     public var includeMinimizedWindows: Bool
     public var showWindowTitles: Bool
+    public var dockWindowPreviewsEnabled: Bool
 
     public init(
         isEnabled: Bool,
         includeMinimizedWindows: Bool,
-        showWindowTitles: Bool
+        showWindowTitles: Bool,
+        dockWindowPreviewsEnabled: Bool = false
     ) {
         self.isEnabled = isEnabled
         self.includeMinimizedWindows = includeMinimizedWindows
         self.showWindowTitles = showWindowTitles
+        self.dockWindowPreviewsEnabled = dockWindowPreviewsEnabled
     }
 
     public static let `default` = SwitcherSettings(
         isEnabled: true,
         includeMinimizedWindows: true,
-        showWindowTitles: true
+        showWindowTitles: true,
+        dockWindowPreviewsEnabled: false
     )
+
+    private enum CodingKeys: String, CodingKey {
+        case isEnabled
+        case includeMinimizedWindows
+        case showWindowTitles
+        case dockWindowPreviewsEnabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
+        includeMinimizedWindows = try container.decode(Bool.self, forKey: .includeMinimizedWindows)
+        showWindowTitles = try container.decode(Bool.self, forKey: .showWindowTitles)
+        dockWindowPreviewsEnabled =
+            try container.decodeIfPresent(Bool.self, forKey: .dockWindowPreviewsEnabled) ?? false
+    }
 }
 
 public protocol SwitcherSettingsStore: Sendable {
