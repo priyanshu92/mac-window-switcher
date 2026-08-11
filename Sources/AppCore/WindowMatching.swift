@@ -66,6 +66,36 @@ public enum WindowRecordMatcher {
     }
 }
 
+public struct IdentifiedWindowMatchDescriptor: Equatable, Sendable {
+    public let identifier: String
+    public let descriptor: WindowMatchDescriptor
+
+    public init(identifier: String, descriptor: WindowMatchDescriptor) {
+        self.identifier = identifier
+        self.descriptor = descriptor
+    }
+}
+
+public enum FocusedWindowMatcher {
+    public static func identifier(
+        explicitIdentifier: String?,
+        focusedWindow: WindowMatchDescriptor,
+        candidates: [IdentifiedWindowMatchDescriptor]
+    ) -> String? {
+        if
+            let explicitIdentifier,
+            candidates.contains(where: { $0.identifier == explicitIdentifier })
+        {
+            return explicitIdentifier
+        }
+
+        return WindowRecordMatcher.bestMatchIndex(
+            for: focusedWindow,
+            in: candidates.map(\.descriptor)
+        ).map { candidates[$0].identifier }
+    }
+}
+
 public enum InitialWindowSelection {
     public static func index(windowCount: Int, movingForward: Bool) -> Int {
         guard windowCount > 1 else { return 0 }
@@ -74,17 +104,45 @@ public enum InitialWindowSelection {
 }
 
 public struct WindowSwitchRecency: Equatable, Sendable {
+    private static let missingWindowGraceScans = 4
+
     public private(set) var orderedWindowIdentifiers: [String] = []
+    private var missingScanCounts: [String: Int] = [:]
 
     public init() {}
 
     public mutating func reconcile(
         discoveredWindowIdentifiers: [String],
-        currentWindowIdentifier: String?
+        currentWindowIdentifier: String?,
+        minimizedWindowIdentifiers: Set<String> = [],
+        synchronizeWithDiscoveredOrder: Bool = false
     ) -> [String] {
         let discoveredIdentifiers = Set(discoveredWindowIdentifiers)
-        orderedWindowIdentifiers.removeAll {
-            !discoveredIdentifiers.contains($0)
+
+        if
+            synchronizeWithDiscoveredOrder,
+            let currentWindowIdentifier,
+            discoveredWindowIdentifiers.first == currentWindowIdentifier
+        {
+            let undiscoveredIdentifiers = orderedWindowIdentifiers.filter {
+                !discoveredIdentifiers.contains($0)
+            }
+            orderedWindowIdentifiers = discoveredWindowIdentifiers + undiscoveredIdentifiers
+        }
+
+        orderedWindowIdentifiers = orderedWindowIdentifiers.filter { identifier in
+            guard !discoveredIdentifiers.contains(identifier) else {
+                missingScanCounts.removeValue(forKey: identifier)
+                return true
+            }
+
+            let missingScanCount = missingScanCounts[identifier, default: 0] + 1
+            missingScanCounts[identifier] = missingScanCount
+            if missingScanCount >= Self.missingWindowGraceScans {
+                missingScanCounts.removeValue(forKey: identifier)
+                return false
+            }
+            return true
         }
 
         let knownIdentifiers = Set(orderedWindowIdentifiers)
@@ -94,11 +152,22 @@ public struct WindowSwitchRecency: Equatable, Sendable {
             }
         )
 
-        if let currentWindowIdentifier {
+        if
+            let currentWindowIdentifier,
+            discoveredIdentifiers.contains(currentWindowIdentifier)
+        {
             promote(currentWindowIdentifier)
         }
 
-        return orderedWindowIdentifiers
+        let activeWindowIdentifiers = orderedWindowIdentifiers.filter {
+            !minimizedWindowIdentifiers.contains($0)
+        }
+        let minimizedIdentifiers = orderedWindowIdentifiers.filter {
+            minimizedWindowIdentifiers.contains($0)
+        }
+        orderedWindowIdentifiers = activeWindowIdentifiers + minimizedIdentifiers
+
+        return orderedWindowIdentifiers.filter(discoveredIdentifiers.contains)
     }
 
     public mutating func recordSelection(_ selectedWindowIdentifier: String) {

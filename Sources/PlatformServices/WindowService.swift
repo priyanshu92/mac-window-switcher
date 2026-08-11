@@ -66,7 +66,7 @@ public final class MacWindowService {
 
     public init() {}
 
-    public func focusedWindowIdentifier() -> String? {
+    public func focusedWindowIdentifier(in windows: [SwitchableWindow]) -> String? {
         guard let application = NSWorkspace.shared.frontmostApplication else {
             return nil
         }
@@ -77,13 +77,69 @@ public final class MacWindowService {
                 applicationElement,
                 attribute: kAXFocusedWindowAttribute as CFString,
                 as: AXUIElement.self
-            ),
-            let identifier = windowIdentifier(for: focusedWindow)
+            )
         else {
-            return nil
+            return windows.first {
+                $0.processIdentifier == application.processIdentifier
+            }?.id
         }
 
-        return "\(application.processIdentifier)-\(identifier)"
+        if let identifier = windowIdentifier(for: focusedWindow) {
+            let stableIdentifier = "\(application.processIdentifier)-\(identifier)"
+            if windows.contains(where: { $0.id == stableIdentifier }) {
+                return stableIdentifier
+            }
+        }
+
+        if
+            let matchingWindow = windows.first(where: {
+                guard
+                    $0.processIdentifier == application.processIdentifier,
+                    let accessibilityElement = $0.accessibilityElement
+                else {
+                    return false
+                }
+                return CFEqual(accessibilityElement, focusedWindow)
+            })
+        {
+            return matchingWindow.id
+        }
+
+        let title = copyAttribute(
+            focusedWindow,
+            attribute: kAXTitleAttribute as CFString,
+            as: String.self
+        ) ?? ""
+        let position = copyPoint(
+            focusedWindow,
+            attribute: kAXPositionAttribute as CFString
+        ) ?? .zero
+        let size = copySize(
+            focusedWindow,
+            attribute: kAXSizeAttribute as CFString
+        ) ?? .zero
+        let focusedDescriptor = WindowMatchDescriptor(
+            processIdentifier: application.processIdentifier,
+            title: title,
+            bounds: CGRect(origin: position, size: size)
+        )
+        let candidates = windows
+            .filter { $0.processIdentifier == application.processIdentifier }
+            .map {
+                IdentifiedWindowMatchDescriptor(
+                    identifier: $0.id,
+                    descriptor: WindowMatchDescriptor(
+                        processIdentifier: $0.processIdentifier,
+                        title: $0.windowTitle,
+                        bounds: $0.bounds
+                    )
+                )
+            }
+        return FocusedWindowMatcher.identifier(
+            explicitIdentifier: nil,
+            focusedWindow: focusedDescriptor,
+            candidates: candidates
+        )
     }
 
     public func discoverWindows(includeMinimized: Bool) -> [SwitchableWindow] {

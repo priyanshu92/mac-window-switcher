@@ -7,8 +7,12 @@ enum ValidationRunner {
         try validateSettingsPersistence()
         validateWindowDisplayTitles()
         validateWindowRecordMatching()
+        validateFocusedWindowMatching()
         validateInitialWindowSelection()
         validateRepeatedWindowSwitching()
+        validateExternalWindowSwitching()
+        validateTransientWindowDiscovery()
+        validateMinimizedWindowOrdering()
         validateWindowPresentationFiltering()
         validateWindowPreviewLayout()
         validateWindowApplicationEligibility()
@@ -83,6 +87,37 @@ enum ValidationRunner {
         )
     }
 
+    private static func validateFocusedWindowMatching() {
+        let focusedWindow = WindowMatchDescriptor(
+            processIdentifier: 42,
+            title: "Terminal",
+            bounds: CGRect(x: 100, y: 80, width: 1200, height: 800)
+        )
+        let candidates = [
+            IdentifiedWindowMatchDescriptor(
+                identifier: "42-100",
+                descriptor: WindowMatchDescriptor(
+                    processIdentifier: 42,
+                    title: "Other",
+                    bounds: CGRect(x: 0, y: 0, width: 800, height: 600)
+                )
+            ),
+            IdentifiedWindowMatchDescriptor(
+                identifier: "42-101",
+                descriptor: focusedWindow
+            ),
+        ]
+
+        expect(
+            FocusedWindowMatcher.identifier(
+                explicitIdentifier: nil,
+                focusedWindow: focusedWindow,
+                candidates: candidates
+            ) == "42-101",
+            "A focused AX window without AXWindowNumber should match its discovered window"
+        )
+    }
+
     private static func validateInitialWindowSelection() {
         expect(
             InitialWindowSelection.index(windowCount: 5, movingForward: true) == 1,
@@ -142,6 +177,88 @@ enum ValidationRunner {
         expect(
             displayedOrder == ["new", "current", "older"],
             "Focusing a window outside the switcher should promote it to the front"
+        )
+    }
+
+    private static func validateExternalWindowSwitching() {
+        var recency = WindowSwitchRecency()
+        _ = recency.reconcile(
+            discoveredWindowIdentifiers: ["old-current", "older", "terminal", "teams"],
+            currentWindowIdentifier: "old-current"
+        )
+
+        let externallyUpdatedOrder = recency.reconcile(
+            discoveredWindowIdentifiers: ["terminal", "teams", "old-current", "older"],
+            currentWindowIdentifier: "terminal",
+            synchronizeWithDiscoveredOrder: true
+        )
+        expect(
+            externallyUpdatedOrder == ["terminal", "teams", "old-current", "older"],
+            "External activation should synchronize the full MRU list with Window Server order"
+        )
+
+        recency.recordSelection("teams")
+        let staleWindowServerOrder = recency.reconcile(
+            discoveredWindowIdentifiers: ["terminal", "teams", "old-current", "older"],
+            currentWindowIdentifier: "teams",
+            synchronizeWithDiscoveredOrder: true
+        )
+        expect(
+            staleWindowServerOrder == ["teams", "terminal", "old-current", "older"],
+            "A stale Window Server order should not undo a switcher selection"
+        )
+    }
+
+    private static func validateTransientWindowDiscovery() {
+        var recency = WindowSwitchRecency()
+        _ = recency.reconcile(
+            discoveredWindowIdentifiers: ["current", "previous", "older"],
+            currentWindowIdentifier: "current"
+        )
+        recency.recordSelection("previous")
+
+        _ = recency.reconcile(
+            discoveredWindowIdentifiers: ["previous", "older"],
+            currentWindowIdentifier: "previous"
+        )
+        let restoredOrder = recency.reconcile(
+            discoveredWindowIdentifiers: ["previous", "current", "older"],
+            currentWindowIdentifier: "previous"
+        )
+
+        expect(
+            restoredOrder == ["previous", "current", "older"],
+            "A transient discovery miss should not reset a window's MRU position"
+        )
+
+        for _ in 0..<4 {
+            _ = recency.reconcile(
+                discoveredWindowIdentifiers: ["previous", "older"],
+                currentWindowIdentifier: "previous"
+            )
+        }
+
+        let orderAfterClose = recency.reconcile(
+            discoveredWindowIdentifiers: ["previous", "older", "new"],
+            currentWindowIdentifier: "previous"
+        )
+        expect(
+            orderAfterClose == ["previous", "older", "new"],
+            "A window missing for multiple refreshes should be removed from MRU history"
+        )
+    }
+
+    private static func validateMinimizedWindowOrdering() {
+        var recency = WindowSwitchRecency()
+        let displayedOrder = recency.reconcile(
+            discoveredWindowIdentifiers: ["current", "minimized", "previous"],
+            currentWindowIdentifier: "current",
+            minimizedWindowIdentifiers: ["minimized"]
+        )
+
+        expect(
+            displayedOrder == ["current", "previous", "minimized"],
+            "Minimized windows should move to the end of the MRU list"
         )
     }
 

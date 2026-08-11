@@ -113,10 +113,14 @@ final class SwitcherController {
         let discoveredIdentifiers = discoveredWindows.map(\.id)
         let currentIdentifier = panel.isVisible
             ? sessionOriginWindowIdentifier
-            : windowService.focusedWindowIdentifier()
+            : windowService.focusedWindowIdentifier(in: discoveredWindows)
         let orderedIdentifiers = windowSwitchRecency.reconcile(
             discoveredWindowIdentifiers: discoveredIdentifiers,
-            currentWindowIdentifier: currentIdentifier
+            currentWindowIdentifier: currentIdentifier,
+            minimizedWindowIdentifiers: Set(
+                discoveredWindows.lazy.filter(\.isMinimized).map(\.id)
+            ),
+            synchronizeWithDiscoveredOrder: !panel.isVisible
         )
         viewModel.windows = orderedIdentifiers.compactMap { windowsByIdentifier[$0] }
 
