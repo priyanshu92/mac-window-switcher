@@ -267,6 +267,7 @@ public enum DockWindowPreviewLayout {
     public static let panelPadding: CGFloat = 12
     public static let shadowRadius: CGFloat = 7
     public static let cardSpacing: CGFloat = 0
+    public static let captionHeight: CGFloat = 44
 
     public static func aspectRatio(windowSize: CGSize) -> CGFloat {
         guard windowSize.width > 0, windowSize.height > 0 else {

@@ -188,6 +188,10 @@ enum ValidationRunner {
             "Multiple Dock previews should form one joined group"
         )
         expect(
+            DockWindowPreviewLayout.captionHeight == 44,
+            "Dock preview headers should preserve balanced card proportions"
+        )
+        expect(
             abs(
                 DockWindowPreviewLayout.cardWidth(
                     windowSize: CGSize(width: 1600, height: 900),

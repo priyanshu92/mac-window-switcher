@@ -400,7 +400,7 @@ final class SwitcherController {
                 + cardWidths.reduce(0, +)
                 + spacingWidth
             let panelHeight = panelPadding * 2
-                + Self.captionHeight
+                + DockWindowPreviewLayout.captionHeight
                 + dockPreviewHeight
 
             viewModel.columnCount = windowCount

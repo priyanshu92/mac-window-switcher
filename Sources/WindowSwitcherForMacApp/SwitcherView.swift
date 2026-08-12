@@ -191,6 +191,10 @@ private struct WindowCard: View {
         isDockPreview ? previewHeight - 8 : previewHeight
     }
 
+    private var captionHeight: CGFloat {
+        isDockPreview ? DockWindowPreviewLayout.captionHeight : 44
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 9) {
@@ -228,7 +232,7 @@ private struct WindowCard: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
-            .frame(height: 44)
+            .frame(height: captionHeight)
 
             preview
                 .frame(
@@ -255,7 +259,7 @@ private struct WindowCard: View {
         )
         .padding(.horizontal, isDockPreview ? 8 : 0)
         .padding(.bottom, isDockPreview ? 8 : 0)
-            .frame(width: cardWidth, height: previewHeight + 44)
+            .frame(width: cardWidth, height: previewHeight + captionHeight)
                 .background(
                     isDockPreview
                         ? dockCardBackground
