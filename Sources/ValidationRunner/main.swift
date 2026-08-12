@@ -16,6 +16,7 @@ enum ValidationRunner {
         validateMinimizedWindowOrdering()
         validateWindowPresentationFiltering()
         validateAccessibilityWindowLiveness()
+        validateWindowServerFallback()
         validateInitialWindowDiscovery()
         validateWindowPreviewLayout()
         validateDockWindowPreviewLayout()
@@ -151,6 +152,30 @@ enum ValidationRunner {
         )
     }
 
+    private static func validateWindowServerFallback() {
+        expect(
+            WindowServerFallback.shouldInclude(
+                hasSpaceMembership: true,
+                hasTitle: true
+            ),
+            "Live windows on another Space should remain eligible for fallback"
+        )
+        expect(
+            !WindowServerFallback.shouldInclude(
+                hasSpaceMembership: false,
+                hasTitle: true
+            ),
+            "Window Server surfaces without Space membership should be treated as stale"
+        )
+        expect(
+            !WindowServerFallback.shouldInclude(
+                hasSpaceMembership: true,
+                hasTitle: false
+            ),
+            "Untitled auxiliary surfaces should not become Dock preview cards"
+        )
+    }
+
     private static func validateDockWindowPreviewLayout() {
         expect(
             abs(
@@ -200,6 +225,43 @@ enum ValidationRunner {
                 in: records
             ) == 2,
             "An AX window without an ID should match its Window Server preview record"
+        )
+        expect(
+            WindowRecordMatcher.bestMatchIndex(
+                for: accessibilityWindow,
+                in: [
+                    WindowMatchDescriptor(
+                        processIdentifier: 42,
+                        title: "Project Roadmap",
+                        bounds: accessibilityWindow.bounds,
+                        isOnscreen: false
+                    ),
+                    WindowMatchDescriptor(
+                        processIdentifier: 42,
+                        title: "Project Roadmap",
+                        bounds: accessibilityWindow.bounds,
+                        isOnscreen: true
+                    ),
+                ]
+            ) == 1,
+            "Ambiguous AX windows should prefer the live on-screen Window Server record"
+        )
+        expect(
+            WindowRecordMatcher.bestMatchIndex(
+                for: WindowMatchDescriptor(
+                    processIdentifier: 42,
+                    title: "Project Roadmap - Browser",
+                    bounds: accessibilityWindow.bounds
+                ),
+                in: [
+                    WindowMatchDescriptor(
+                        processIdentifier: 42,
+                        title: "Project Roadmap",
+                        bounds: accessibilityWindow.bounds
+                    ),
+                ]
+            ) == 0,
+            "AX titles with an app suffix should match the Window Server title"
         )
     }
 

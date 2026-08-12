@@ -5,11 +5,18 @@ public struct WindowMatchDescriptor: Equatable, Sendable {
     public let processIdentifier: Int32
     public let title: String
     public let bounds: CGRect
+    public let isOnscreen: Bool
 
-    public init(processIdentifier: Int32, title: String, bounds: CGRect) {
+    public init(
+        processIdentifier: Int32,
+        title: String,
+        bounds: CGRect,
+        isOnscreen: Bool = true
+    ) {
         self.processIdentifier = processIdentifier
         self.title = title
         self.bounds = bounds
+        self.isOnscreen = isOnscreen
     }
 }
 
@@ -30,6 +37,8 @@ public enum WindowRecordMatcher {
                 return normalizedTitle.isEmpty
                     || candidateTitle.isEmpty
                     || candidateTitle == normalizedTitle
+                    || normalizedTitle.contains(candidateTitle)
+                    || candidateTitle.contains(normalizedTitle)
             }
             .min { lhs, rhs in
                 score(
@@ -51,14 +60,25 @@ public enum WindowRecordMatcher {
         normalizedTitle: String
     ) -> CGFloat {
         let candidateTitle = normalize(candidate.title)
-        let titlePenalty: CGFloat = normalizedTitle == candidateTitle ? 0 : 10_000
+        let titlePenalty: CGFloat
+        if normalizedTitle == candidateTitle {
+            titlePenalty = 0
+        } else if
+            normalizedTitle.contains(candidateTitle)
+                || candidateTitle.contains(normalizedTitle)
+        {
+            titlePenalty = 1_000
+        } else {
+            titlePenalty = 10_000
+        }
+        let onscreenPenalty: CGFloat = candidate.isOnscreen ? 0 : 100_000
         let sizeDifference =
             abs(accessibilityWindow.bounds.width - candidate.bounds.width)
             + abs(accessibilityWindow.bounds.height - candidate.bounds.height)
         let positionDifference =
             abs(accessibilityWindow.bounds.minX - candidate.bounds.minX)
             + abs(accessibilityWindow.bounds.minY - candidate.bounds.minY)
-        return titlePenalty + sizeDifference + positionDifference * 0.25
+        return onscreenPenalty + titlePenalty + sizeDifference + positionDifference * 0.25
     }
 
     private static func normalize(_ title: String) -> String {
@@ -201,6 +221,15 @@ public enum AccessibilityWindowLiveness {
     ) -> Bool {
         guard let explicitIdentifier else { return true }
         return currentWindowServerIdentifiers.contains(explicitIdentifier)
+    }
+}
+
+public enum WindowServerFallback {
+    public static func shouldInclude(
+        hasSpaceMembership: Bool,
+        hasTitle: Bool
+    ) -> Bool {
+        hasSpaceMembership && hasTitle
     }
 }
 

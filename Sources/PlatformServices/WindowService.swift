@@ -68,12 +68,14 @@ public final class MacWindowService {
         let title: String
         let bounds: CGRect
         let order: Int
+        let isOnscreen: Bool
 
         var matchDescriptor: WindowMatchDescriptor {
             WindowMatchDescriptor(
                 processIdentifier: processIdentifier,
                 title: title,
-                bounds: bounds
+                bounds: bounds,
+                isOnscreen: isOnscreen
             )
         }
     }
@@ -338,6 +340,13 @@ public final class MacWindowService {
                 }
 
                 let appName = app.localizedName ?? "Application"
+                let preview = identifier.flatMap {
+                    makePreview(
+                        $0,
+                        bestResolution: processIdentifier == nil,
+                        refresh: previewRefreshIdentifiers.contains($0)
+                    )
+                }
                 windows.append(
                     SwitchableWindow(
                         id: identifier.map { "\(app.processIdentifier)-\($0)" }
@@ -347,13 +356,7 @@ public final class MacWindowService {
                         appName: appName,
                         appIcon: app.icon ?? fallbackAppIcon(),
                         windowTitle: title.isEmpty ? matchedRecord?.title ?? "" : title,
-                        preview: identifier.flatMap {
-                            makePreview(
-                                $0,
-                                bestResolution: processIdentifier == nil,
-                                refresh: previewRefreshIdentifiers.contains($0)
-                            )
-                        },
+                        preview: preview,
                         isMinimized: minimized,
                         bounds: matchedRecord?.bounds ?? accessibilityBounds,
                         accessibilityElement: element
@@ -373,6 +376,16 @@ public final class MacWindowService {
         // Accessibility can be unavailable during first launch. Keep the switcher useful
         // enough to explain permissions by falling back to Window Server metadata.
         for record in records where !seenWindowIdentifiers.contains(record.identifier) {
+            guard WindowServerFallback.shouldInclude(
+                hasSpaceMembership: WindowSpaceMembership.contains(
+                    record.identifier
+                ),
+                hasTitle: !record.title.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                ).isEmpty
+            ) else {
+                continue
+            }
             guard
                 let app = NSRunningApplication(processIdentifier: record.processIdentifier),
                 isEligible(app, ownsWindowServerRecord: true)
@@ -618,7 +631,8 @@ public final class MacWindowService {
                 processIdentifier: ownerPID,
                 title: info[kCGWindowName as String] as? String ?? "",
                 bounds: bounds,
-                order: index
+                order: index,
+                isOnscreen: info[kCGWindowIsOnscreen as String] as? Bool ?? false
             )
         }
     }
