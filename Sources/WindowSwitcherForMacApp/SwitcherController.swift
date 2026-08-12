@@ -358,7 +358,9 @@ final class SwitcherController {
         let screen = sessionScreen ?? screenContainingPointer()
         guard let visibleFrame = screen?.visibleFrame else { return }
 
-        let panelPadding = dockProcessIdentifier == nil ? Self.panelPadding : 6
+        let panelPadding = dockProcessIdentifier == nil
+            ? Self.panelPadding
+            : DockWindowPreviewLayout.panelPadding
         let cardSpacing = dockProcessIdentifier == nil ? Self.cardSpacing : 8
         let availableWidth = max(1, visibleFrame.width - 64)
         let availableHeight = max(1, visibleFrame.height - 64)

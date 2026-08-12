@@ -15,12 +15,14 @@ public struct DockApplicationTarget: Equatable, Sendable {
 public enum DockInteractionEvent: Equatable, Sendable {
     case hover(DockApplicationTarget?)
     case click(DockApplicationTarget)
+    case contextMenu
 }
 
 nonisolated(unsafe) private var dockInteractionHandler:
     (@Sendable (DockInteractionEvent) -> Void)?
 nonisolated(unsafe) private var dockEventTapReference: CFMachPort?
 nonisolated(unsafe) private var suppressDockMouseUp = false
+nonisolated(unsafe) private var dockContextMenuActive = false
 
 private func dockEventCallback(
     proxy: CGEventTapProxy,
@@ -40,18 +42,40 @@ private func dockEventCallback(
         return nil
     }
 
+    let button: DockPointerButton
+    switch type {
+    case .leftMouseDown:
+        button = .primary
+    case .rightMouseDown:
+        button = .secondary
+    default:
+        return Unmanaged.passUnretained(event)
+    }
+
     guard
-        type == .leftMouseDown,
         let target = DockAccessibilityResolver.applicationTarget(at: event.location)
     else {
         return Unmanaged.passUnretained(event)
     }
 
-    // Suppress both halves of the native Dock click so it cannot activate an
-    // arbitrary app window before the app-specific picker handles the click.
-    suppressDockMouseUp = true
-    dockInteractionHandler?(.click(target))
-    return nil
+    switch DockPointerInteraction.action(
+        button: button,
+        controlPressed: event.flags.contains(.maskControl),
+        contextMenuActive: dockContextMenuActive
+    ) {
+    case .handlePrimaryClick:
+        // Suppress both halves of the native Dock click so it cannot activate an
+        // arbitrary app window before the app-specific picker handles the click.
+        suppressDockMouseUp = true
+        dockInteractionHandler?(.click(target))
+        return nil
+    case .dismissForContextMenu:
+        dockContextMenuActive = true
+        dockInteractionHandler?(.contextMenu)
+        return Unmanaged.passUnretained(event)
+    case .ignore:
+        return Unmanaged.passUnretained(event)
+    }
 }
 
 private enum DockAccessibilityResolver {
@@ -139,6 +163,7 @@ public final class DockInteractionMonitor {
     private var runLoopSource: CFRunLoopSource?
     private var mouseMovedMonitor: Any?
     private var hoverResolutionTask: Task<Void, Never>?
+    private var suppressHoverForContextMenu = false
 
     public init() {}
 
@@ -148,6 +173,7 @@ public final class DockInteractionMonitor {
         let eventMask =
             (1 << CGEventType.leftMouseDown.rawValue)
             | (1 << CGEventType.leftMouseUp.rawValue)
+            | (1 << CGEventType.rightMouseDown.rawValue)
             | (1 << CGEventType.tapDisabledByTimeout.rawValue)
             | (1 << CGEventType.tapDisabledByUserInput.rawValue)
 
@@ -197,6 +223,8 @@ public final class DockInteractionMonitor {
         runLoopSource = nil
         dockEventTapReference = nil
         suppressDockMouseUp = false
+        dockContextMenuActive = false
+        suppressHoverForContextMenu = false
         dockInteractionHandler?(.hover(nil))
     }
 
@@ -205,6 +233,14 @@ public final class DockInteractionMonitor {
         hoverResolutionTask = nil
 
         let pointerLocation = NSEvent.mouseLocation
+        if suppressHoverForContextMenu {
+            if !isNearPossibleDockEdge(pointerLocation) {
+                suppressHoverForContextMenu = false
+                dockContextMenuActive = false
+            }
+            dockInteractionHandler?(.hover(nil))
+            return
+        }
         guard isNearPossibleDockEdge(pointerLocation) else {
             dockInteractionHandler?(.hover(nil))
             return
@@ -223,6 +259,14 @@ public final class DockInteractionMonitor {
             dockInteractionHandler?(.hover(target))
             hoverResolutionTask = nil
         }
+    }
+
+    public func suppressHoverUntilPointerLeavesDock() {
+        hoverResolutionTask?.cancel()
+        hoverResolutionTask = nil
+        suppressHoverForContextMenu = true
+        dockContextMenuActive = true
+        dockInteractionHandler?(.hover(nil))
     }
 
     private func isNearPossibleDockEdge(_ point: NSPoint) -> Bool {

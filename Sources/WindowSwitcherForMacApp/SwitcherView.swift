@@ -44,7 +44,7 @@ struct SwitcherView: View {
                         )
                     }
                 }
-                .padding(6)
+                .padding(DockWindowPreviewLayout.panelPadding)
             } else {
                 LazyVGrid(
                     columns: Array(
@@ -252,10 +252,12 @@ private struct WindowCard: View {
             }
             .shadow(
                 color: isDockPreview
-                    ? .black.opacity(isHovered ? 0.34 : 0.24)
+                    ? .black.opacity(isHovered ? 0.25 : 0.16)
                     : .black.opacity(isHighlighted ? 0.35 : 0.18),
-                radius: isDockPreview ? 9 : 12,
-                y: isDockPreview ? 4 : 7
+                radius: isDockPreview
+                    ? DockWindowPreviewLayout.shadowRadius
+                    : 12,
+                y: isDockPreview ? 3 : 7
             )
             .onHover {
                 isHovered = $0

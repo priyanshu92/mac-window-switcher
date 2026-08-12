@@ -264,6 +264,8 @@ public enum WindowPreviewLayout {
 public enum DockWindowPreviewLayout {
     public static let horizontalChrome: CGFloat = 16
     public static let bottomChrome: CGFloat = 8
+    public static let panelPadding: CGFloat = 12
+    public static let shadowRadius: CGFloat = 7
 
     public static func aspectRatio(windowSize: CGSize) -> CGFloat {
         guard windowSize.width > 0, windowSize.height > 0 else {
@@ -279,6 +281,40 @@ public enum DockWindowPreviewLayout {
         let contentHeight = max(1, previewHeight - bottomChrome)
         return contentHeight * aspectRatio(windowSize: windowSize)
             + horizontalChrome
+    }
+}
+
+public enum DockPointerButton: Equatable, Sendable {
+    case primary
+    case secondary
+    case other
+}
+
+public enum DockPointerAction: Equatable, Sendable {
+    case handlePrimaryClick
+    case dismissForContextMenu
+    case ignore
+}
+
+public enum DockPointerInteraction {
+    public static func action(
+        button: DockPointerButton,
+        controlPressed: Bool,
+        contextMenuActive: Bool = false
+    ) -> DockPointerAction {
+        if contextMenuActive {
+            return .ignore
+        }
+        switch button {
+        case .primary:
+            return controlPressed
+                ? .dismissForContextMenu
+                : .handlePrimaryClick
+        case .secondary:
+            return .dismissForContextMenu
+        case .other:
+            return .ignore
+        }
     }
 }
 

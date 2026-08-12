@@ -20,6 +20,7 @@ enum ValidationRunner {
         validateInitialWindowDiscovery()
         validateWindowPreviewLayout()
         validateDockWindowPreviewLayout()
+        validateDockPointerInteraction()
         validateWindowApplicationEligibility()
         validateAccessoryWindowScanCache()
         validateLiveRefreshCadence()
@@ -178,6 +179,11 @@ enum ValidationRunner {
 
     private static func validateDockWindowPreviewLayout() {
         expect(
+            DockWindowPreviewLayout.panelPadding
+                > DockWindowPreviewLayout.shadowRadius,
+            "Dock panel padding should let card shadows fade before clipping"
+        )
+        expect(
             abs(
                 DockWindowPreviewLayout.cardWidth(
                     windowSize: CGSize(width: 1600, height: 900),
@@ -192,6 +198,38 @@ enum ValidationRunner {
                 previewHeight: 120
             ) < 100,
             "Portrait windows should produce narrow Dock cards without side whitespace"
+        )
+    }
+
+    private static func validateDockPointerInteraction() {
+        expect(
+            DockPointerInteraction.action(
+                button: .primary,
+                controlPressed: false
+            ) == .handlePrimaryClick,
+            "A primary Dock click should use the custom window picker"
+        )
+        expect(
+            DockPointerInteraction.action(
+                button: .secondary,
+                controlPressed: false
+            ) == .dismissForContextMenu,
+            "A secondary Dock click should dismiss previews for the native menu"
+        )
+        expect(
+            DockPointerInteraction.action(
+                button: .primary,
+                controlPressed: true
+            ) == .dismissForContextMenu,
+            "Control-click should preserve the native Dock context menu"
+        )
+        expect(
+            DockPointerInteraction.action(
+                button: .primary,
+                controlPressed: false,
+                contextMenuActive: true
+            ) == .ignore,
+            "Clicks inside an open native Dock menu must pass through untouched"
         )
     }
 

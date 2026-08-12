@@ -123,6 +123,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             handleDockHover(target)
         case let .click(target):
             handleDockClick(target)
+        case .contextMenu:
+            cancelDockHover()
+            dockInteractionMonitor.suppressHoverUntilPointerLeavesDock()
+            switcherController.dismissDockPreview()
         }
     }
 
