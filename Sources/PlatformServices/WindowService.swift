@@ -295,6 +295,12 @@ public final class MacWindowService {
                     as: String.self
                 ) ?? ""
                 let explicitIdentifier = windowIdentifier(for: element)
+                guard AccessibilityWindowLiveness.shouldInclude(
+                    explicitIdentifier: explicitIdentifier,
+                    currentWindowServerIdentifiers: currentIdentifiers
+                ) else {
+                    continue
+                }
                 let explicitRecord = explicitIdentifier.flatMap { recordsByIdentifier[$0] }
                 let position = copyPoint(
                     element,

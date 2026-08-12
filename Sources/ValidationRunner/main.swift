@@ -15,6 +15,7 @@ enum ValidationRunner {
         validateTransientWindowDiscovery()
         validateMinimizedWindowOrdering()
         validateWindowPresentationFiltering()
+        validateAccessibilityWindowLiveness()
         validateInitialWindowDiscovery()
         validateWindowPreviewLayout()
         validateDockWindowPreviewLayout()
@@ -123,6 +124,30 @@ enum ValidationRunner {
         expect(
             !InitialWindowDiscovery.shouldRefreshPreviews(hasCachedWindows: true),
             "Repeat discovery should reuse the filtered preview cache"
+        )
+    }
+
+    private static func validateAccessibilityWindowLiveness() {
+        expect(
+            !AccessibilityWindowLiveness.shouldInclude(
+                explicitIdentifier: 41,
+                currentWindowServerIdentifiers: [42]
+            ),
+            "AX windows whose explicit ID disappeared from Window Server should be removed"
+        )
+        expect(
+            AccessibilityWindowLiveness.shouldInclude(
+                explicitIdentifier: 42,
+                currentWindowServerIdentifiers: [42]
+            ),
+            "AX windows with a current Window Server ID should remain visible"
+        )
+        expect(
+            AccessibilityWindowLiveness.shouldInclude(
+                explicitIdentifier: nil,
+                currentWindowServerIdentifiers: [42]
+            ),
+            "AX-only windows should remain eligible for fallback matching"
         )
     }
 

@@ -194,6 +194,16 @@ public enum WindowPresentationFilter {
     }
 }
 
+public enum AccessibilityWindowLiveness {
+    public static func shouldInclude(
+        explicitIdentifier: UInt32?,
+        currentWindowServerIdentifiers: Set<UInt32>
+    ) -> Bool {
+        guard let explicitIdentifier else { return true }
+        return currentWindowServerIdentifiers.contains(explicitIdentifier)
+    }
+}
+
 public enum InitialWindowDiscovery {
     public static func shouldRefreshPreviews(hasCachedWindows: Bool) -> Bool {
         !hasCachedWindows
