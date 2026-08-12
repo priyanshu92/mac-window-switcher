@@ -184,6 +184,10 @@ enum ValidationRunner {
             "Dock panel padding should let card shadows fade before clipping"
         )
         expect(
+            DockWindowPreviewLayout.cardSpacing == 0,
+            "Multiple Dock previews should form one joined group"
+        )
+        expect(
             abs(
                 DockWindowPreviewLayout.cardWidth(
                     windowSize: CGSize(width: 1600, height: 900),

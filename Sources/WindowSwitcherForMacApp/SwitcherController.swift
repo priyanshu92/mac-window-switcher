@@ -361,7 +361,9 @@ final class SwitcherController {
         let panelPadding = dockProcessIdentifier == nil
             ? Self.panelPadding
             : DockWindowPreviewLayout.panelPadding
-        let cardSpacing = dockProcessIdentifier == nil ? Self.cardSpacing : 8
+        let cardSpacing = dockProcessIdentifier == nil
+            ? Self.cardSpacing
+            : DockWindowPreviewLayout.cardSpacing
         let availableWidth = max(1, visibleFrame.width - 64)
         let availableHeight = max(1, visibleFrame.height - 64)
         let screenAspectRatio = displayAspectRatio(for: screen) ?? (16.0 / 9.0)

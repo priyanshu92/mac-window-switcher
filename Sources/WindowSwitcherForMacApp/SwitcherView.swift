@@ -20,6 +20,8 @@ final class SwitcherViewModel: ObservableObject {
 }
 
 struct SwitcherView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     @ObservedObject var model: SwitcherViewModel
     let onSelect: (Int) -> Void
     let onHover: (Int?) -> Void
@@ -30,7 +32,7 @@ struct SwitcherView: View {
             if model.windows.isEmpty {
                 emptyState
             } else if model.isDockPreview {
-                HStack(spacing: 8) {
+                HStack(spacing: DockWindowPreviewLayout.cardSpacing) {
                     ForEach(Array(model.windows.enumerated()), id: \.element.id) {
                         index,
                         window in
@@ -42,8 +44,27 @@ struct SwitcherView: View {
                                 previewHeight: model.previewHeight
                             )
                         )
+                        .overlay(alignment: .trailing) {
+                            if index < model.windows.count - 1 {
+                                Rectangle()
+                                    .fill(
+                                        colorScheme == .dark
+                                            ? .white.opacity(0.10)
+                                            : .black.opacity(0.10)
+                                    )
+                                    .frame(width: 1)
+                            }
+                        }
                     }
                 }
+                .clipShape(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                )
+                .shadow(
+                    color: .black.opacity(0.18),
+                    radius: DockWindowPreviewLayout.shadowRadius,
+                    y: 3
+                )
                 .padding(DockWindowPreviewLayout.panelPadding)
             } else {
                 LazyVGrid(
@@ -240,7 +261,12 @@ private struct WindowCard: View {
                         ? dockCardBackground
                         : .black.opacity(0.28)
                 )
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: isDockPreview ? 0 : 16,
+                    style: .continuous
+                )
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(
@@ -252,7 +278,7 @@ private struct WindowCard: View {
             }
             .shadow(
                 color: isDockPreview
-                    ? .black.opacity(isHovered ? 0.25 : 0.16)
+                    ? .clear
                     : .black.opacity(isHighlighted ? 0.35 : 0.18),
                 radius: isDockPreview
                     ? DockWindowPreviewLayout.shadowRadius
