@@ -151,22 +151,15 @@ private struct WindowCard: View {
         isSelected || isHovered
     }
 
-    private var dockOuterBorder: Color {
-        colorScheme == .dark
-            ? .white.opacity(0.34)
-            : .black.opacity(0.30)
-    }
-
-    private var dockInnerHighlight: Color {
-        colorScheme == .dark
-            ? .white.opacity(0.12)
-            : .white.opacity(0.88)
-    }
-
-    private var dockPreviewEdge: Color {
-        colorScheme == .dark
-            ? .white.opacity(0.28)
-            : .black.opacity(0.24)
+    private var dockCardBackground: Color {
+        if colorScheme == .dark {
+            return isHovered
+                ? Color(red: 0.23, green: 0.23, blue: 0.25)
+                : Color(red: 0.17, green: 0.17, blue: 0.19)
+        }
+        return isHovered
+            ? Color(red: 0.89, green: 0.89, blue: 0.91)
+            : Color(red: 0.95, green: 0.95, blue: 0.96)
     }
 
     private var displayedPreviewWidth: CGFloat {
@@ -215,11 +208,6 @@ private struct WindowCard: View {
             }
             .padding(.horizontal, 12)
             .frame(height: 44)
-            .background {
-                if isDockPreview {
-                    Color(nsColor: .windowBackgroundColor)
-                }
-            }
 
             preview
                 .frame(
@@ -228,15 +216,6 @@ private struct WindowCard: View {
                 )
                 .clipped()
                 .background(.black.opacity(0.24))
-                .overlay {
-                    if isDockPreview {
-                        Rectangle()
-                            .strokeBorder(
-                                dockPreviewEdge,
-                                lineWidth: 1.25
-                            )
-                    }
-                }
                 .overlay(alignment: .topTrailing) {
                     if window.isMinimized {
                         Image(systemName: "minus")
@@ -258,34 +237,25 @@ private struct WindowCard: View {
             .frame(width: cardWidth, height: previewHeight + 44)
                 .background(
                     isDockPreview
-                        ? Color(nsColor: .windowBackgroundColor)
+                        ? dockCardBackground
                         : .black.opacity(0.28)
                 )
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(
-                    isHighlighted
+                    !isDockPreview && isHighlighted
                         ? Color(nsColor: .controlAccentColor)
-                        : isDockPreview
-                            ? dockOuterBorder
-                            : .white.opacity(0.12),
-                    lineWidth: isHighlighted ? 4 : isDockPreview ? 1.5 : 1
+                        : isDockPreview ? .clear : .white.opacity(0.12),
+                    lineWidth: !isDockPreview && isHighlighted ? 4 : 1
                 )
-            }
-            .overlay {
-                if isDockPreview, !isHighlighted {
-                    RoundedRectangle(cornerRadius: 15, style: .continuous)
-                        .inset(by: 1.5)
-                        .stroke(dockInnerHighlight, lineWidth: 1)
-                }
             }
             .shadow(
                 color: isDockPreview
-                    ? .clear
+                    ? .black.opacity(isHovered ? 0.34 : 0.24)
                     : .black.opacity(isHighlighted ? 0.35 : 0.18),
-                radius: isDockPreview ? 0 : 12,
-                y: isDockPreview ? 0 : 7
+                radius: isDockPreview ? 9 : 12,
+                y: isDockPreview ? 4 : 7
             )
             .onHover {
                 isHovered = $0
