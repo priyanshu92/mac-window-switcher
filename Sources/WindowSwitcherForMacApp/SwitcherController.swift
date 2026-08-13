@@ -202,20 +202,10 @@ final class SwitcherController {
 
         if !panel.isVisible {
             prepareSession()
-            if !cachedGlobalWindows.isEmpty {
-                applyGlobalWindows(
-                    cachedGlobalWindows,
-                    selectedIdentifier: nil
-                )
-                sessionOriginWindowIdentifier = viewModel.windows.first?.id
-                viewModel.selectedIndex = InitialWindowSelection.index(
-                    windowCount: viewModel.windows.count,
-                    movingForward: offset > 0
-                )
-                showPanel()
-                return
-            }
-            loadWindows(preservingSelection: false)
+            loadWindows(
+                preservingSelection: false,
+                isOpeningSwitcher: true
+            )
             guard !viewModel.windows.isEmpty else {
                 showPanel()
                 return
@@ -234,9 +224,13 @@ final class SwitcherController {
         viewModel.selectedIndex = (
             viewModel.selectedIndex + offset + viewModel.windows.count
         ) % viewModel.windows.count
+        refreshSelectedPreview()
     }
 
-    private func loadWindows(preservingSelection: Bool) {
+    private func loadWindows(
+        preservingSelection: Bool,
+        isOpeningSwitcher: Bool = false
+    ) {
         let selectedIdentifier = preservingSelection ? viewModel.selectedWindow?.id : nil
         let settings = settingsStore.load()
         viewModel.showWindowTitles = settings.showWindowTitles
@@ -244,7 +238,8 @@ final class SwitcherController {
             panel.isVisible
             || dockProcessIdentifier != nil
             || InitialWindowDiscovery.shouldRefreshPreviews(
-                hasCachedWindows: !cachedGlobalWindows.isEmpty
+                hasCachedWindows: !cachedGlobalWindows.isEmpty,
+                isOpeningSwitcher: isOpeningSwitcher
             )
         let discoveredWindows = windowService.discoverWindows(
             includeMinimized: settings.includeMinimizedWindows,
@@ -510,6 +505,12 @@ final class SwitcherController {
     private func quitSelectedApplication() {
         guard let selected = viewModel.selectedWindow else { return }
         windowService.quitApplication(owning: selected)
+    }
+
+    private func refreshSelectedPreview() {
+        guard let selected = viewModel.selectedWindow else { return }
+        windowService.refreshPreview(for: selected)
+        viewModel.windows = viewModel.windows
     }
 
     private func startLiveUpdates() {

@@ -18,9 +18,11 @@ enum ValidationRunner {
         validateAccessibilityWindowLiveness()
         validateWindowServerFallback()
         validateInitialWindowDiscovery()
+        validateWindowPreviewRefresh()
         validateWindowPreviewLayout()
         validateDockWindowPreviewLayout()
         validateDockPointerInteraction()
+        validateLaunchAtStartupAvailability()
         validateWindowApplicationEligibility()
         validateAccessoryWindowScanCache()
         validateLiveRefreshCadence()
@@ -126,6 +128,27 @@ enum ValidationRunner {
         expect(
             !InitialWindowDiscovery.shouldRefreshPreviews(hasCachedWindows: true),
             "Repeat discovery should reuse the filtered preview cache"
+        )
+        expect(
+            InitialWindowDiscovery.shouldRefreshPreviews(
+                hasCachedWindows: true,
+                isOpeningSwitcher: true
+            ),
+            "Opening Command-Tab should refresh every cached preview before presentation"
+        )
+    }
+
+    private static func validateWindowPreviewRefresh() {
+        let plan = WindowPreviewRefresh.plan(
+            orderedIdentifiers: [10, 11],
+            cachedIdentifiers: [10],
+            refreshCachedPreviews: false,
+            limit: nil,
+            cursor: 0
+        )
+        expect(
+            plan.identifiers == [11],
+            "Repeat discovery should capture newly created windows before presenting them"
         )
     }
 
@@ -238,6 +261,24 @@ enum ValidationRunner {
                 contextMenuActive: true
             ) == .ignore,
             "Clicks inside an open native Dock menu must pass through untouched"
+        )
+    }
+
+    private static func validateLaunchAtStartupAvailability() {
+        expect(
+            LaunchAtStartupAvailability.isAvailable(
+                bundleURL: URL(fileURLWithPath: "/Applications/Window Switcher.app")
+            ),
+            "Installed app bundles should support launch at startup"
+        )
+        expect(
+            !LaunchAtStartupAvailability.isAvailable(
+                bundleURL: URL(
+                    fileURLWithPath:
+                        "/repo/.build/arm64-apple-macosx/debug/WindowSwitcherForMacApp"
+                )
+            ),
+            "Swift development executables must not register as login items"
         )
     }
 
