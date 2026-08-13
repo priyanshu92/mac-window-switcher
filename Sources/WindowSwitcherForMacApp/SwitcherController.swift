@@ -27,9 +27,6 @@ final class SwitcherController {
     private var sessionOriginWindowIdentifier: String?
     private var dockProcessIdentifier: pid_t?
     private var dockAnchorPoint: NSPoint?
-    private var dockOriginActivationTarget: WindowActivationTarget?
-    private var dockHoveredWindowIdentifier: String?
-    private var dockRestoreTask: Task<Void, Never>?
     private var suppressedDockWindowIdentifiers: Set<String> = []
     private var cachedGlobalWindows: [SwitchableWindow] = []
     private var windowSwitchRecency = WindowSwitchRecency()
@@ -56,9 +53,7 @@ final class SwitcherController {
             onSelect: { [weak self] index in
                 self?.selectAndCommit(index)
             },
-            onHover: { [weak self] index in
-                self?.previewDockWindow(at: index)
-            },
+            onHover: { _ in },
             onClose: { [weak self] index in
                 self?.closeDockWindow(at: index)
             }
@@ -144,7 +139,7 @@ final class SwitcherController {
         case 1:
             let window = viewModel.windows[0]
             windowSwitchRecency.recordSelection(window.id)
-            clearSession(restoringDockOrigin: false)
+            clearSession()
             windowService.activate(window)
             return .activatedWindow
         default:
@@ -169,13 +164,10 @@ final class SwitcherController {
     }
 
     func cancel() {
-        clearSession(restoringDockOrigin: dockProcessIdentifier != nil)
+        clearSession()
     }
 
-    private func clearSession(restoringDockOrigin: Bool) {
-        dockRestoreTask?.cancel()
-        dockRestoreTask = nil
-        let activationTarget = restoringDockOrigin ? dockOriginActivationTarget : nil
+    private func clearSession() {
         stopLiveUpdates()
         panel.orderOut(nil)
         viewModel.windows = []
@@ -183,16 +175,11 @@ final class SwitcherController {
         sessionOriginWindowIdentifier = nil
         dockProcessIdentifier = nil
         dockAnchorPoint = nil
-        dockOriginActivationTarget = nil
-        dockHoveredWindowIdentifier = nil
         suppressedDockWindowIdentifiers.removeAll()
         viewModel.isDockPreview = false
         viewModel.showsCloseButtons = false
         hostingController.view.layer?.masksToBounds = true
         panel.hasShadow = true
-        if let activationTarget {
-            windowService.activate(activationTarget)
-        }
     }
 
     private func cycle(by offset: Int) {
@@ -492,7 +479,7 @@ final class SwitcherController {
         }
 
         windowSwitchRecency.recordSelection(selected.id)
-        clearSession(restoringDockOrigin: false)
+        clearSession()
         windowService.activate(selected)
     }
 
@@ -535,7 +522,6 @@ final class SwitcherController {
         sessionScreen = screenContainingPointer()
         dockProcessIdentifier = nil
         dockAnchorPoint = nil
-        dockOriginActivationTarget = nil
         viewModel.isDockPreview = false
         viewModel.showsCloseButtons = false
         hostingController.view.layer?.masksToBounds = true
@@ -550,9 +536,6 @@ final class SwitcherController {
         {
             suppressedDockWindowIdentifiers.removeAll()
         }
-        if dockOriginActivationTarget == nil {
-            dockOriginActivationTarget = windowService.activeWindowTarget()
-        }
         sessionScreen = screenContainingPointer()
         sessionOriginWindowIdentifier = nil
         dockProcessIdentifier = processIdentifier
@@ -561,36 +544,6 @@ final class SwitcherController {
         viewModel.showsCloseButtons = true
         hostingController.view.layer?.masksToBounds = false
         panel.hasShadow = false
-    }
-
-    private func previewDockWindow(at index: Int?) {
-        guard dockProcessIdentifier != nil, panel.isVisible else { return }
-
-        dockRestoreTask?.cancel()
-        dockRestoreTask = nil
-
-        guard let index, viewModel.windows.indices.contains(index) else {
-            dockHoveredWindowIdentifier = nil
-            dockRestoreTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 50_000_000)
-                guard
-                    !Task.isCancelled,
-                    let self,
-                    self.dockHoveredWindowIdentifier == nil,
-                    let activationTarget = self.dockOriginActivationTarget
-                else {
-                    return
-                }
-                self.windowService.activate(activationTarget)
-                self.dockRestoreTask = nil
-            }
-            return
-        }
-
-        let window = viewModel.windows[index]
-        guard dockHoveredWindowIdentifier != window.id else { return }
-        dockHoveredWindowIdentifier = window.id
-        windowService.activate(window)
     }
 
     private func closeDockWindow(at index: Int) {
@@ -603,9 +556,6 @@ final class SwitcherController {
 
         let window = viewModel.windows[index]
         suppressedDockWindowIdentifiers.insert(window.id)
-        if dockHoveredWindowIdentifier == window.id {
-            dockHoveredWindowIdentifier = nil
-        }
         stopLiveUpdates()
         _ = withAnimation(.easeOut(duration: 0.14)) {
             viewModel.windows.remove(at: index)
@@ -614,8 +564,6 @@ final class SwitcherController {
             sizeAndPositionPanel(animated: true)
         }
         windowService.close(window)
-        previewDockWindow(at: nil)
-
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 180_000_000)
             guard let self, self.dockProcessIdentifier != nil else { return }
