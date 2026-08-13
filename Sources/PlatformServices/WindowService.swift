@@ -29,7 +29,7 @@ public final class SwitchableWindow: Identifiable {
     public let appName: String
     public let appIcon: NSImage
     public let windowTitle: String
-    public let preview: NSImage?
+    public fileprivate(set) var preview: NSImage?
     public let isMinimized: Bool
     public let bounds: CGRect
 
@@ -436,6 +436,15 @@ public final class MacWindowService {
 
     }
 
+    public func refreshPreview(for window: SwitchableWindow) {
+        guard let windowIdentifier = window.windowIdentifier else { return }
+        window.preview = makePreview(
+            windowIdentifier,
+            bestResolution: true,
+            refresh: true
+        )
+    }
+
     public func activate(_ window: SwitchableWindow) {
         guard let application = NSRunningApplication(processIdentifier: window.processIdentifier) else {
             return
@@ -673,28 +682,15 @@ public final class MacWindowService {
         refreshPreviews: Bool,
         limit: Int?
     ) -> Set<CGWindowID> {
-        guard refreshPreviews else { return [] }
-        guard let limit, records.count > limit else {
-            return Set(records.map(\.identifier))
-        }
-
-        let uncachedIdentifiers = records.lazy
-            .map(\.identifier)
-            .filter { self.previewCache[$0] == nil }
-        var identifiers = Array(uncachedIdentifiers.prefix(limit))
-        if identifiers.count < limit, !records.isEmpty {
-            let remainingCount = limit - identifiers.count
-            for offset in 0..<remainingCount {
-                let index = (previewRefreshCursor + offset) % records.count
-                let identifier = records[index].identifier
-                if !identifiers.contains(identifier) {
-                    identifiers.append(identifier)
-                }
-            }
-            previewRefreshCursor =
-                (previewRefreshCursor + remainingCount) % records.count
-        }
-        return Set(identifiers)
+        let plan = WindowPreviewRefresh.plan(
+            orderedIdentifiers: records.map(\.identifier),
+            cachedIdentifiers: Set(previewCache.keys),
+            refreshCachedPreviews: refreshPreviews,
+            limit: limit,
+            cursor: previewRefreshCursor
+        )
+        previewRefreshCursor = plan.nextCursor
+        return plan.identifiers
     }
 
     private func isStandardWindow(_ element: AXUIElement) -> Bool {

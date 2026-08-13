@@ -234,8 +234,64 @@ public enum WindowServerFallback {
 }
 
 public enum InitialWindowDiscovery {
-    public static func shouldRefreshPreviews(hasCachedWindows: Bool) -> Bool {
-        !hasCachedWindows
+    public static func shouldRefreshPreviews(
+        hasCachedWindows: Bool,
+        isOpeningSwitcher: Bool = false
+    ) -> Bool {
+        isOpeningSwitcher || !hasCachedWindows
+    }
+}
+
+public struct WindowPreviewRefreshPlan: Equatable, Sendable {
+    public let identifiers: Set<UInt32>
+    public let nextCursor: Int
+
+    public init(identifiers: Set<UInt32>, nextCursor: Int) {
+        self.identifiers = identifiers
+        self.nextCursor = nextCursor
+    }
+}
+
+public enum WindowPreviewRefresh {
+    public static func plan(
+        orderedIdentifiers: [UInt32],
+        cachedIdentifiers: Set<UInt32>,
+        refreshCachedPreviews: Bool,
+        limit: Int?,
+        cursor: Int
+    ) -> WindowPreviewRefreshPlan {
+        var identifiers = orderedIdentifiers.filter {
+            !cachedIdentifiers.contains($0)
+        }
+        guard refreshCachedPreviews else {
+            return WindowPreviewRefreshPlan(
+                identifiers: Set(identifiers),
+                nextCursor: cursor
+            )
+        }
+        guard let limit, orderedIdentifiers.count > limit else {
+            return WindowPreviewRefreshPlan(
+                identifiers: Set(orderedIdentifiers),
+                nextCursor: cursor
+            )
+        }
+
+        var inspectedCount = 0
+        while
+            identifiers.count < limit,
+            inspectedCount < orderedIdentifiers.count
+        {
+            let index = (cursor + inspectedCount) % orderedIdentifiers.count
+            let identifier = orderedIdentifiers[index]
+            if !identifiers.contains(identifier) {
+                identifiers.append(identifier)
+            }
+            inspectedCount += 1
+        }
+        return WindowPreviewRefreshPlan(
+            identifiers: Set(identifiers),
+            nextCursor: (cursor + inspectedCount) % orderedIdentifiers.count
+        )
     }
 }
 
@@ -317,6 +373,12 @@ public enum DockPointerInteraction {
         case .other:
             return .ignore
         }
+    }
+}
+
+public enum LaunchAtStartupAvailability {
+    public static func isAvailable(bundleURL: URL) -> Bool {
+        bundleURL.pathExtension.caseInsensitiveCompare("app") == .orderedSame
     }
 }
 

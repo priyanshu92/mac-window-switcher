@@ -79,17 +79,18 @@ final class StatusItemController: NSObject {
         addPermissionItems(to: menu)
         menu.addItem(.separator())
 
-        let launchItem = NSMenuItem(
-            title: "Launch at Startup",
-            action: #selector(toggleLaunchAtStartup),
-            keyEquivalent: ""
-        )
-        launchItem.target = self
-        launchItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        launchItem.image = menuIcon("power")
-        menu.addItem(launchItem)
-
-        menu.addItem(.separator())
+        if LaunchAtStartupAvailability.isAvailable(bundleURL: Bundle.main.bundleURL) {
+            let launchItem = NSMenuItem(
+                title: "Launch at Startup",
+                action: #selector(toggleLaunchAtStartup),
+                keyEquivalent: ""
+            )
+            launchItem.target = self
+            launchItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+            launchItem.image = menuIcon("power")
+            menu.addItem(launchItem)
+            menu.addItem(.separator())
+        }
 
         let quitItem = NSMenuItem(
             title: "Quit Window Switcher",
@@ -162,6 +163,11 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func toggleLaunchAtStartup() {
+        guard LaunchAtStartupAvailability.isAvailable(
+            bundleURL: Bundle.main.bundleURL
+        ) else {
+            return
+        }
         do {
             if SMAppService.mainApp.status == .enabled {
                 try SMAppService.mainApp.unregister()
