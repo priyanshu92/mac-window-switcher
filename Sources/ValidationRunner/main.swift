@@ -211,8 +211,8 @@ enum ValidationRunner {
             "Multiple Dock previews should form one joined group"
         )
         expect(
-            DockWindowPreviewLayout.captionHeight == 44,
-            "Dock preview headers should preserve balanced card proportions"
+            DockWindowPreviewLayout.captionHeight == 36,
+            "Dock preview headers should keep controls compact without clipping"
         )
         expect(
             abs(
@@ -261,6 +261,12 @@ enum ValidationRunner {
                 contextMenuActive: true
             ) == .ignore,
             "Clicks inside an open native Dock menu must pass through untouched"
+        )
+        expect(
+            !DockPointerInteraction.shouldResolveDockTarget(
+                contextMenuActive: true
+            ),
+            "Native Dock menu clicks must bypass Accessibility hit-testing"
         )
     }
 
