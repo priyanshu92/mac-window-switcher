@@ -125,7 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             handleDockClick(target)
         case .contextMenu:
             cancelDockHover()
-            dockInteractionMonitor.suppressHoverUntilPointerLeavesDock()
+            dockInteractionMonitor.suppressHoverForContextMenu()
             switcherController.dismissDockPreview()
         }
     }

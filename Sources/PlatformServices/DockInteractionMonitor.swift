@@ -21,7 +21,6 @@ public enum DockInteractionEvent: Equatable, Sendable {
 nonisolated(unsafe) private var dockInteractionHandler:
     (@Sendable (DockInteractionEvent) -> Void)?
 nonisolated(unsafe) private var dockEventTapReference: CFMachPort?
-nonisolated(unsafe) private var suppressDockMouseUp = false
 nonisolated(unsafe) private var dockContextMenuActive = false
 
 private func dockEventCallback(
@@ -37,9 +36,13 @@ private func dockEventCallback(
         return Unmanaged.passUnretained(event)
     }
 
-    if type == .leftMouseUp, suppressDockMouseUp {
-        suppressDockMouseUp = false
-        return nil
+    guard DockPointerInteraction.shouldResolveDockTarget(
+        contextMenuActive: dockContextMenuActive
+    ) else {
+        if type == .leftMouseDown {
+            dockContextMenuActive = false
+        }
+        return Unmanaged.passUnretained(event)
     }
 
     let button: DockPointerButton
@@ -64,9 +67,9 @@ private func dockEventCallback(
         contextMenuActive: dockContextMenuActive
     ) {
     case .handlePrimaryClick:
-        // Suppress both halves of the native Dock click so it cannot activate an
-        // arbitrary app window before the app-specific picker handles the click.
-        suppressDockMouseUp = true
+        // Suppressing the mouse-down is sufficient to prevent the Dock from
+        // activating an arbitrary app window. Mouse-up remains unmonitored so
+        // native context-menu commands receive their complete tracking sequence.
         dockInteractionHandler?(.click(target))
         return nil
     case .dismissForContextMenu:
@@ -163,8 +166,6 @@ public final class DockInteractionMonitor {
     private var runLoopSource: CFRunLoopSource?
     private var mouseMovedMonitor: Any?
     private var hoverResolutionTask: Task<Void, Never>?
-    private var suppressHoverForContextMenu = false
-
     public init() {}
 
     public func start() throws {
@@ -172,7 +173,6 @@ public final class DockInteractionMonitor {
 
         let eventMask =
             (1 << CGEventType.leftMouseDown.rawValue)
-            | (1 << CGEventType.leftMouseUp.rawValue)
             | (1 << CGEventType.rightMouseDown.rawValue)
             | (1 << CGEventType.tapDisabledByTimeout.rawValue)
             | (1 << CGEventType.tapDisabledByUserInput.rawValue)
@@ -222,9 +222,7 @@ public final class DockInteractionMonitor {
         eventTap = nil
         runLoopSource = nil
         dockEventTapReference = nil
-        suppressDockMouseUp = false
         dockContextMenuActive = false
-        suppressHoverForContextMenu = false
         dockInteractionHandler?(.hover(nil))
     }
 
@@ -233,11 +231,7 @@ public final class DockInteractionMonitor {
         hoverResolutionTask = nil
 
         let pointerLocation = NSEvent.mouseLocation
-        if suppressHoverForContextMenu {
-            if !isNearPossibleDockEdge(pointerLocation) {
-                suppressHoverForContextMenu = false
-                dockContextMenuActive = false
-            }
+        if dockContextMenuActive {
             dockInteractionHandler?(.hover(nil))
             return
         }
@@ -261,10 +255,9 @@ public final class DockInteractionMonitor {
         }
     }
 
-    public func suppressHoverUntilPointerLeavesDock() {
+    public func suppressHoverForContextMenu() {
         hoverResolutionTask?.cancel()
         hoverResolutionTask = nil
-        suppressHoverForContextMenu = true
         dockContextMenuActive = true
         dockInteractionHandler?(.hover(nil))
     }
