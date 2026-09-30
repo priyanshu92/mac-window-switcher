@@ -712,9 +712,13 @@ public final class MacWindowService {
     }
 
     private func windowIdentifier(for element: AXUIElement) -> CGWindowID? {
-        // AXWindowNumber is the Window Server ID used by Core Graphics. It is not exposed
-        // as a Swift constant, but is the stable bridge needed to pair AX windows with
-        // their thumbnails and front-to-back ordering.
+        // The Window Server ID is the stable bridge needed to pair AX windows with their
+        // thumbnails and front-to-back ordering. Chromium browsers such as Brave do not
+        // expose AXWindowNumber, and title matching cannot tell apart same-sized windows
+        // on the same site, so prefer the private lookup that works for every app.
+        if let identifier = AccessibilityWindowResolver.identifier(of: element) {
+            return identifier
+        }
         let attribute = "AXWindowNumber" as CFString
         if let number = copyAttribute(element, attribute: attribute, as: NSNumber.self) {
             return CGWindowID(number.uint32Value)
