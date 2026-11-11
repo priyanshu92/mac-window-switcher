@@ -39,9 +39,9 @@ cat > "$CONTENTS_DIR/Info.plist" << PLIST
     <key>CFBundleIdentifier</key>
     <string>${BUNDLE_ID}</string>
     <key>CFBundleVersion</key>
-    <string>1.0.20</string>
+    <string>1.0.21</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.20</string>
+    <string>1.0.21</string>
     <key>CFBundleExecutable</key>
     <string>WindowSwitcherForMacApp</string>
     <key>CFBundlePackageType</key>

@@ -596,6 +596,16 @@ enum ValidationRunner {
         )
         expect(
             !WindowApplicationEligibility.shouldInclude(
+                isCurrentApplication: false,
+                isTerminated: false,
+                kind: .accessory,
+                ownsWindowServerRecord: true,
+                bundleIdentifier: "com.apple.WindowManager"
+            ),
+            "WindowManager gesture overlays should not be switchable app windows"
+        )
+        expect(
+            !WindowApplicationEligibility.shouldInclude(
                 isCurrentApplication: true,
                 isTerminated: false,
                 kind: .accessory,

@@ -591,7 +591,8 @@ public final class MacWindowService {
                 application.processIdentifier == ProcessInfo.processInfo.processIdentifier,
             isTerminated: application.isTerminated,
             kind: applicationKind(for: application.activationPolicy),
-            ownsWindowServerRecord: ownsWindowServerRecord
+            ownsWindowServerRecord: ownsWindowServerRecord,
+            bundleIdentifier: application.bundleIdentifier
         )
     }
 

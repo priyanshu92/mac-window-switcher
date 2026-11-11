@@ -399,9 +399,16 @@ public enum WindowApplicationEligibility {
         isCurrentApplication: Bool,
         isTerminated: Bool,
         kind: WindowApplicationKind,
-        ownsWindowServerRecord: Bool
+        ownsWindowServerRecord: Bool,
+        bundleIdentifier: String? = nil
     ) -> Bool {
         guard !isCurrentApplication, !isTerminated else {
+            return false
+        }
+
+        // WindowManager owns macOS gesture-blocking overlays, which are not app windows
+        // users can switch to even though Window Server reports them as accessory windows.
+        guard bundleIdentifier != "com.apple.WindowManager" else {
             return false
         }
 
